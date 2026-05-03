@@ -1,0 +1,14 @@
+## End-to-end testing (gotit)
+
+This project's E2E tests are driven by [gotit](https://github.com/shivamstaq/gotit) — a YAML-spec-based runner for Go CLIs. Specs live under `tests/e2e/specs/<wave>/`, the runner is wired in `tests/e2e/runner_test.go`, and feature-gated specs are guarded by `tests/e2e/features.yaml`.
+
+When asked to write, run, or debug E2E tests, prefer the installed `gotit-*` skills (under `.claude/skills/` and `.opencode/skills/`):
+
+- `gotit-add-spec` — author one YAML spec for one feature.
+- `gotit-add-fixture` — add a static repo fixture under `testdata/repos/`.
+- `gotit-add-helper` — register a programmatic repo builder (commit history, renames, …).
+- `gotit-add-feature-flag` — land a spec for an unshipped feature behind a flag.
+- `gotit-diagnose-failure` — read the JSONL log under `tests/e2e/results/` and propose a fix.
+- `gotit-run-suite` — run a filtered subset via `go test -run`.
+
+The cross-tool spec contract lives at `https://github.com/shivamstaq/gotit/blob/main/SPEC.md`. When uncertain about the YAML format, assertion types, or capture syntax, consult that file.

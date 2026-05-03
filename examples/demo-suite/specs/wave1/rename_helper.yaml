@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: rename-helper
+description: Programmatic helper produces a 2-commit repo with one rename
+tags: [wave1, helper, git]
+order: 50
+repo:
+  helper: two-commit-rename
+
+steps:
+  - name: log_two_commits
+    command: git log --oneline
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: regex
+        pattern: 'rename: old_name\.txt -> new_name\.txt'
+      - type: regex
+        pattern: 'initial: old_name\.txt'
+
+  - name: rename_detected
+    command: git log --follow --diff-filter=R --pretty=format:%s -- new_name.txt
+    assert:
+      - type: contains
+        value: rename

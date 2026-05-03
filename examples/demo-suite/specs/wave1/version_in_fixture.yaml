@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: version-in-fixture
+description: Run demo inside a static fixture repo; version still prints
+tags: [wave1, fixture]
+order: 40
+repo:
+  fixture: hello
+
+steps:
+  - name: list_fixture
+    command: ls
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: contains
+        value: "README.md"
+
+  - name: version_inside_fixture
+    command: demo version
+    assert:
+      - type: json_path
+        path: "$.name"
+        expected: demo

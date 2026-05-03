@@ -1,0 +1,11 @@
+# gotit feature-flag allowlist.
+#
+# Specs that declare `requires: [feature:<name>]` are skipped unless the flag
+# is listed here as `true` (or enabled at run time via {{ .EnvPrefix }}_E2E_FEATURES).
+# Land specs for unshipped features as `false`; flip to `true` in the same PR
+# that ships the feature.
+#
+# Schema: https://github.com/shivamstaq/gotit/blob/main/schema/features.schema.json
+
+enabled:
+  # example-feature: false

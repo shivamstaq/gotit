@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: Go build, vet, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: runner unit tests
+        run: go test ./runner/... -race -count=1
+
+      - name: demo-suite integration (default)
+        run: go test ./examples/demo-suite/ -count=1 -v
+
+      - name: demo-suite integration (feature flag forced on)
+        env:
+          DEMO_E2E_FEATURES: greet-feature
+        run: go test ./examples/demo-suite/ -count=1 -run 'TestE2E/wave1/greet-feature-gated' -v
+
+      - name: build gotit binary
+        run: go build -o /tmp/gotit ./cmd/gotit/
+
+      - name: gotit doctor (against demo-suite)
+        run: |
+          cd examples/demo-suite
+          /tmp/gotit doctor || true   # TTY check is expected to fail in CI
+
+      - name: gotit run wave1 (against demo-suite, headless)
+        run: |
+          cd examples/demo-suite
+          /tmp/gotit run wave1
+
+  schema:
+    name: JSON Schema regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ajv
+        run: npm install -g ajv-cli
+
+      - name: Validate every demo spec against schema
+        run: |
+          set -eu
+          for f in examples/demo-suite/specs/wave1/*.yaml; do
+            echo "validating $f"
+            # ajv validates JSON, so convert YAML→JSON via Python's PyYAML.
+            python3 -c "import sys, yaml, json; json.dump(yaml.safe_load(open(sys.argv[1])), sys.stdout)" "$f" \
+              | ajv validate -s schema/spec.schema.json --spec=draft2020 -d /dev/stdin
+          done
+
+      - name: Validate features.yaml schema
+        run: |
+          python3 -c "import sys, yaml, json; json.dump(yaml.safe_load(open(sys.argv[1])), sys.stdout)" examples/demo-suite/features.yaml \
+            | ajv validate -s schema/features.schema.json --spec=draft2020 -d /dev/stdin
+
+      - name: Validate gotit.yaml schema
+        run: |
+          python3 -c "import sys, yaml, json; json.dump(yaml.safe_load(open(sys.argv[1])), sys.stdout)" examples/demo-suite/gotit.yaml \
+            | ajv validate -s schema/gotit-config.schema.json --spec=draft2020 -d /dev/stdin
+
+  skills:
+    name: Skill frontmatter + .opencode mirror lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint SKILL.md frontmatter
+        run: bash scripts/lint-skills.sh
+
+      - name: Confirm .opencode/skills/ matches .claude/skills/
+        run: bash scripts/check-skill-mirror.sh

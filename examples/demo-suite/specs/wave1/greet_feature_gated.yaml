@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: greet-feature-gated
+description: greet subcommand skipped unless DEMO_E2E_FEATURES=greet-feature is set
+tags: [wave1, feature-flag]
+order: 60
+requires: [feature:greet-feature]
+
+steps:
+  - name: greet_named
+    command: demo greet --name=gotit
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: contains
+        value: "Hello, gotit!"

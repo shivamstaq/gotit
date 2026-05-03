@@ -1,0 +1,10 @@
+# Demo suite run logs (kept around locally for debugging; never committed).
+examples/demo-suite/results/
+
+# Stray binaries from `go build` invocations.
+/demo
+/gotit
+
+# Editor scratch.
+*.swp
+.DS_Store

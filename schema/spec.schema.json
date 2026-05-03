@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shivamstaq/gotit/schemas/spec.v1.json",
+  "title": "gotit Spec (v1)",
+  "description": "Schema for one E2E test scenario consumed by the gotit runner.",
+  "type": "object",
+  "required": ["spec_version", "name", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "description": "Major version of the gotit spec format. v1 is the only currently published major.",
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "description": "Stable identifier; appears in subtest names, JSONL logs, and TUIs.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "requires": {
+      "description": "Runtime prerequisites or feature flags. 'feature:<name>' is gated by the features file; 'git' is built in; anything else must be registered via Config.RequirementCheckers.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "order": {
+      "description": "Sort position within a wave. Lower comes first; unset (0) sorts after ordered specs alphabetically.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "notes_file": {
+      "description": "Override the default sidecar notes path (default: <basename>.md).",
+      "type": "string"
+    },
+    "repo": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fixture": {
+          "description": "Name of a directory under FixturesDir.",
+          "type": "string"
+        },
+        "helper": {
+          "description": "Name of a programmatic builder registered in Config.RepoHelpers.",
+          "type": "string"
+        },
+        "helper_args": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "oneOf": [
+        { "required": ["fixture"], "not": { "required": ["helper"] } },
+        { "required": ["helper"] },
+        { "not": { "anyOf": [{ "required": ["fixture"] }, { "required": ["helper"] }] } }
+      ]
+    },
+    "setup": {
+      "description": "Pre-conditions; failure aborts the spec.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "steps": {
+      "description": "Test steps; assertion failures are reported per step.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/step" },
+      "minItems": 1
+    },
+    "cleanup": {
+      "description": "Post-condition assertions. Temp HOME removal is handled by the test driver.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/cleanup_check" }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["name", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+        "command": { "type": "string", "minLength": 1 },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "timeout": {
+          "description": "Go duration string (e.g. \"30s\", \"2m\").",
+          "type": "string",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$"
+        },
+        "capture": {
+          "description": "Map of variable name to capture expression. Expression is a JSONPath ('$.path') or 'regex:(pattern)'.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "assert": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/assertion" }
+        }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "Built-in: exit_code, contains, not_contains, stderr_contains, regex, json_path, count, golden_file. Custom types must use the 'x-' prefix and be registered in Config.Assertions.",
+          "type": "string",
+          "anyOf": [
+            { "enum": ["exit_code", "contains", "not_contains", "stderr_contains", "regex", "json_path", "count", "golden_file"] },
+            { "pattern": "^x-[a-z0-9_-]+$" }
+          ]
+        },
+        "path": { "type": "string" },
+        "expected": {},
+        "op": {
+          "type": "string",
+          "enum": ["==", "!=", ">", ">=", "<", "<=", "contains", "contains_any", "length_gte"]
+        },
+        "value": { "type": "string" },
+        "pattern": { "type": "string" }
+      }
+    },
+    "cleanup_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assert_no_residue": { "type": "boolean" },
+        "assert_files_removed": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

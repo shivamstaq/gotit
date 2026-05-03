@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: add-arithmetic
+description: demo add subcommand sums positional integers
+tags: [wave1, arithmetic]
+order: 20
+requires: [git, demo-helper-marker]
+
+steps:
+  - name: add_two
+    command: demo add 2 3
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: contains
+        value: "5"
+
+  - name: add_negative
+    command: demo add -10 7
+    assert:
+      - type: contains
+        value: "-3"
+
+  - name: missing_args
+    command: demo add 1
+    assert:
+      - type: exit_code
+        expected: 1
+      - type: stderr_contains
+        value: "usage"

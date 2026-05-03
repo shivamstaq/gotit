@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shivamstaq/gotit/schemas/gotit-config.v1.json",
+  "title": "gotit TUI per-project config (v1)",
+  "description": "Schema for tests/e2e/gotit.yaml — the small file the gotit binary reads to learn a project's CLI wiring.",
+  "type": "object",
+  "required": ["binary_name", "build_path", "env_prefix"],
+  "additionalProperties": false,
+  "properties": {
+    "binary_name": {
+      "description": "Bare CLI name, used in spec command tokens (e.g. `mytool`).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "build_path": {
+      "description": "Go package path passed to `go build` (e.g. `./cmd/mytool`).",
+      "type": "string"
+    },
+    "env_prefix": {
+      "description": "Uppercase prefix for isolation env vars: <PREFIX>_HOME, <PREFIX>_E2E_PROJECT_ROOT, <PREFIX>_E2E_FEATURES.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "specs_dir": {
+      "description": "Directory holding YAML spec files. Default: tests/e2e/specs.",
+      "type": "string"
+    },
+    "fixtures_dir": {
+      "description": "Directory holding repo fixtures. Default: tests/e2e/testdata/repos.",
+      "type": "string"
+    },
+    "features_file": {
+      "description": "Path to the feature-flag allowlist YAML. Default: tests/e2e/features.yaml.",
+      "type": "string"
+    },
+    "results_dir": {
+      "description": "Directory for JSONL run logs. Default: tests/e2e/results.",
+      "type": "string"
+    }
+  }
+}

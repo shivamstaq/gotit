@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: version-smoke
+description: demo CLI prints version JSON, exits 0
+tags: [wave1, smoke]
+order: 10
+requires: [git]
+
+steps:
+  - name: version
+    command: demo version
+    capture:
+      ver: "$.version"
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: json_path
+        path: "$.name"
+        expected: demo
+      - type: regex
+        pattern: '"version":\s*"\d+\.\d+\.\d+"'
+
+  - name: capture_used
+    command: demo greet --name={{ ver }}
+    assert:
+      - type: contains
+        value: "Hello, 0.1.0!"

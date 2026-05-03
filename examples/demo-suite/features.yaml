@@ -1,0 +1,8 @@
+# Demo feature-flag allowlist for examples/demo-suite.
+#
+# `greet-feature` is intentionally `false` so the gated spec is skipped by
+# default. CI flips it to true in a separate run by exporting
+# DEMO_E2E_FEATURES=greet-feature.
+
+enabled:
+  greet-feature: false

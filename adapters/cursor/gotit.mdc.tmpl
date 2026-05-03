@@ -1,0 +1,22 @@
+---
+description: gotit E2E test suite conventions for this Go CLI project.
+globs:
+  - tests/e2e/**/*.yaml
+  - tests/e2e/**/*.go
+  - tests/e2e/features.yaml
+alwaysApply: false
+---
+
+# gotit E2E rules
+
+This project uses [gotit](https://github.com/shivamstaq/gotit) for end-to-end testing of the `{{ .BinaryName }}` CLI. When editing files in `tests/e2e/`:
+
+- **Spec format**: every YAML spec must declare `spec_version: 1` and conform to the schema at `https://github.com/shivamstaq/gotit/blob/main/schema/spec.schema.json`. Add the `# yaml-language-server: $schema=…` header for editor autocomplete.
+- **Built-in assertions**: `exit_code`, `contains`, `not_contains`, `stderr_contains`, `regex`, `json_path`, `count`, `golden_file`. Custom types must use the `x-` prefix and be registered in `runner.Config.Assertions`.
+- **Capture syntax**: `$.json.path` for JSONPath, `regex:(group)` for regex. Resolve with `{{ "{{" }} var_name {{ "}}" }}` in later steps.
+- **Repo provisioning**: prefer static fixtures under `testdata/repos/<name>/` for simple cases; use programmatic helpers (`runner.RepoHelper`) only when commit history matters.
+- **Feature flags**: gate unshipped-feature specs with `requires: [feature:<name>]` and add the flag (default `false`) to `tests/e2e/features.yaml`.
+- **Wave organization**: specs live under `tests/e2e/specs/<wave>/`. Subtest names are `<wave>/<spec-name>`, so filter with `go test -run "TestE2E/wave1"`.
+- **Anti-patterns**: do not assert on full stdout via `==` (use `contains` / `json_path`); do not share state across specs; do not modify `runner_test.go` for one-off needs (extend via `Config` registries).
+
+For workflow tasks (write a new spec, diagnose a failing run, port from another harness), prefer the installed `gotit-*` skills.

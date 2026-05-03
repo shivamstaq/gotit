@@ -1,0 +1,29 @@
+package e2e
+
+import (
+	"testing"
+
+	"github.com/shivamstaq/gotit/runner"
+	"github.com/shivamstaq/gotit/runner/testdriver"
+{{- if .HelpersPackage }}
+
+	"{{ .HelpersPackage }}"
+{{- end }}
+)
+
+// TestE2E runs every YAML spec under tests/e2e/specs as a parallel subtest.
+// Filter at the CLI: `go test ./tests/e2e/ -run "TestE2E/wave1"`.
+func TestE2E(t *testing.T) {
+	testdriver.Run(t, runner.Config{
+		BinaryName: "{{ .BinaryName }}",
+		BuildPath:  "{{ .BuildPath }}",
+		EnvPrefix:  "{{ .EnvPrefix }}",
+{{- if .HelpersPackage }}
+
+		// Register repo helpers and runtime requirement checkers here.
+		// RepoHelpers:         map[string]runner.RepoHelper{ "my-helper": helpers.MyHelper },
+		// RequirementCheckers: map[string]runner.RequirementChecker{ "my-tool": helpers.CheckMyTool },
+		// Assertions:          map[string]runner.AssertionFunc{ "x-my-assert": helpers.MyAssertion },
+{{- end }}
+	})
+}

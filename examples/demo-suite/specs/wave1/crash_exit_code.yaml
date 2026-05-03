@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: crash-exit-code
+description: demo crash subcommand exits non-zero with stderr message
+tags: [wave1, error]
+order: 30
+
+steps:
+  - name: crash
+    command: demo crash
+    assert:
+      - type: exit_code
+        expected: 1
+      - type: stderr_contains
+        value: "intentional crash"
+      - type: x-output-lines-gte
+        expected: 0  # stdout is empty; this still passes (>= 0)

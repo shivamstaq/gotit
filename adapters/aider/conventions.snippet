@@ -1,0 +1,11 @@
+## E2E testing (gotit)
+
+This project uses [gotit](https://github.com/shivamstaq/gotit) for end-to-end CLI testing. When editing under `tests/e2e/`:
+
+- Every YAML spec declares `spec_version: 1`. Schema: `https://github.com/shivamstaq/gotit/blob/main/schema/spec.schema.json`.
+- Built-in assertions: `exit_code`, `contains`, `not_contains`, `stderr_contains`, `regex`, `json_path`, `count`, `golden_file`. Custom types use the `x-` prefix.
+- Specs live under `tests/e2e/specs/<wave>/`. Each YAML has a sibling `.md` notes file (auto-rendered if missing).
+- Feature-gated specs use `requires: [feature:<flag>]`; flags live in `tests/e2e/features.yaml`. Land specs disabled; flip the flag in the PR that ships the feature.
+- The runner is wired in `tests/e2e/runner_test.go`. Repo helpers, requirement checkers, and custom assertions are registered there via the `runner.Config` struct.
+
+The full spec contract: `https://github.com/shivamstaq/gotit/blob/main/SPEC.md`.

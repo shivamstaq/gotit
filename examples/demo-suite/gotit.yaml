@@ -1,0 +1,12 @@
+# gotit TUI config for the kit's self-test consumer.
+# Schema: https://github.com/shivamstaq/gotit/raw/main/schema/gotit-config.schema.json
+
+binary_name: demo
+build_path: ./examples/demo-cli/cmd/demo
+env_prefix: DEMO
+
+# Override the dirs because the demo suite lives under examples/, not tests/e2e/.
+specs_dir: examples/demo-suite/specs
+fixtures_dir: examples/demo-suite/testdata/repos
+features_file: examples/demo-suite/features.yaml
+results_dir: examples/demo-suite/results
