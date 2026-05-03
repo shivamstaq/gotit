@@ -66,7 +66,8 @@ name: …
     │  go test ./tests/e2e/                                    │
     │                                                          │
     │  TestE2E (single function, calls testdriver.Run)         │
-    │   ├─ locate project root (walk up to go.mod)             │
+    │   ├─ locate project root (walk up from cwd to go.mod,    │
+    │       unless Config.ProjectRoot is set)                   │
     │   ├─ go build -o <tmp>/<binary> <BuildPath>              │
     │   ├─ open JSONL log                                      │
     │   ├─ LoadSpecs(specs/)         (YAML walk + sort)        │

@@ -29,6 +29,12 @@ type Config struct {
 	// e.g. EnvPrefix "KUBE" yields KUBE_HOME, KUBE_E2E_PROJECT_ROOT, KUBE_E2E_FEATURES.
 	EnvPrefix string
 
+	// ProjectRoot, when set, overrides the default cwd-based go.mod walk used
+	// to locate the consumer's repo root. Useful for IDE test runners that set
+	// a non-package working directory, or for monorepo subpackages whose tests
+	// run from a directory above the intended project root. Must be absolute.
+	ProjectRoot string
+
 	// SpecsDir is the directory tree containing YAML spec files, relative to
 	// the project root. Default: "tests/e2e/specs".
 	SpecsDir string

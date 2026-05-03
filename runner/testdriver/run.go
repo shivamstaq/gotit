@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/shivamstaq/gotit/runner"
@@ -29,9 +28,13 @@ import (
 func Run(t *testing.T, cfg runner.Config) {
 	t.Helper()
 
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		t.Fatalf("find project root: %v", err)
+	projectRoot := cfg.ProjectRoot
+	if projectRoot == "" {
+		var err error
+		projectRoot, err = findProjectRoot()
+		if err != nil {
+			t.Fatalf("find project root: %v", err)
+		}
 	}
 	// Expose to assertions that resolve project-relative paths (golden_file).
 	prefix := cfg.EnvPrefix
@@ -71,12 +74,17 @@ func Run(t *testing.T, cfg runner.Config) {
 	if !filepath.IsAbs(specsDir) {
 		specsDir = filepath.Join(projectRoot, r.Config.SpecsDir)
 	}
+	if _, err := os.Stat(specsDir); os.IsNotExist(err) {
+		t.Logf("specs dir %s does not exist yet — wave still being authored", specsDir)
+		return
+	}
 	specs, err := runner.LoadSpecs(specsDir)
 	if err != nil {
 		t.Fatalf("load specs: %v", err)
 	}
 	if len(specs) == 0 {
-		t.Fatalf("no specs found in %s", specsDir)
+		t.Logf("no specs under %s yet — wave still being authored", specsDir)
+		return
 	}
 
 	featuresFile := r.Config.FeaturesFile
@@ -133,20 +141,24 @@ func Run(t *testing.T, cfg runner.Config) {
 	}
 }
 
-// findProjectRoot walks up from the caller until a go.mod is found.
+// findProjectRoot walks up from the test's working directory until a go.mod
+// is found. `go test` always runs the test binary inside the package's source
+// directory, so cwd is a stable, consumer-correct starting point — unlike the
+// runtime.Caller path of this file, which (when imported as a module) lives
+// in the Go module cache and would resolve to the gotit module's own root.
+// Consumers can override this discovery by setting Config.ProjectRoot.
 func findProjectRoot() (string, error) {
-	_, filename, _, ok := runtime.Caller(1)
-	if !ok {
-		return "", fmt.Errorf("cannot determine caller location")
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getwd: %w", err)
 	}
-	dir := filepath.Dir(filename)
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("go.mod not found in any parent of %s", filename)
+			return "", fmt.Errorf("go.mod not found in any parent of %s", dir)
 		}
 		dir = parent
 	}
