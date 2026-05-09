@@ -2,6 +2,8 @@ package tui
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -228,6 +230,52 @@ func maxWrapWidth(w int) int {
 	return min(80, max(20, w))
 }
 
+// prettyJSON returns s indented as 2-space JSON when s parses as a single
+// JSON value (object or array). For NDJSON / JSON-Lines (one JSON value per
+// line), each line is pretty-printed individually. Anything else is returned
+// unchanged so plain-text stdout is untouched.
+func prettyJSON(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if len(trimmed) == 0 {
+		return s
+	}
+	if c := trimmed[0]; c == '{' || c == '[' {
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, []byte(trimmed), "", "  "); err == nil {
+			return buf.String()
+		}
+	}
+	// NDJSON / JSON-Lines fallback: try indenting each non-empty line.
+	lines := strings.Split(s, "\n")
+	var out strings.Builder
+	any := false
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			if i < len(lines)-1 {
+				out.WriteByte('\n')
+			}
+			continue
+		}
+		if c := t[0]; c != '{' && c != '[' {
+			return s
+		}
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, []byte(t), "", "  "); err != nil {
+			return s
+		}
+		if any {
+			out.WriteByte('\n')
+		}
+		out.Write(buf.Bytes())
+		any = true
+	}
+	if !any {
+		return s
+	}
+	return out.String()
+}
+
 func (m *stepViewerModel) renderQueued() {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", queuedStyle.Render("◎ Queued — waiting for worker slot"))
@@ -281,7 +329,7 @@ func (m *stepViewerModel) renderAllSteps() {
 			fmt.Fprintf(&b, "%s\n", commandStyle.Render("$ "+step.Command))
 		}
 		if step.Stdout != "" {
-			out := step.Stdout
+			out := prettyJSON(step.Stdout)
 			if len(out) > maxOutputDisplay {
 				out = out[:maxOutputDisplay] + "\n" + dimStyle.Render("(truncated)")
 			}
@@ -334,7 +382,7 @@ func (m *stepViewerModel) renderStepReview() {
 
 	if step.Stdout != "" {
 		b.WriteString(headerStyle.Render("stdout:") + "\n")
-		out := step.Stdout
+		out := prettyJSON(step.Stdout)
 		if len(out) > maxOutputDisplay {
 			out = out[:maxOutputDisplay] + "\n" + dimStyle.Render("(truncated — use shell for full output)")
 		}
