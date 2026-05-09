@@ -99,6 +99,19 @@ func Run(t *testing.T, cfg runner.Config) {
 			t.Parallel()
 
 			if err := runner.CheckRequirements(spec.Requires, projectRoot, r.Config.RequirementCheckers, featuresFile, prefix); err != nil {
+				// Emit a terminal spec_end record so the TUI (which tails the
+				// JSONL log) can transition the spec to StateSkipped instead
+				// of leaving it stuck in StateRunning.
+				if r.Logger != nil {
+					r.Logger.LogAny(runner.SpecEndRecord{
+						Type:    runner.RecordTypeSpecEnd,
+						Wave:    spec.Wave,
+						Spec:    spec.Name,
+						Passed:  false,
+						Skipped: true,
+						Error:   err.Error(),
+					})
+				}
 				t.Skip(err)
 			}
 
@@ -117,7 +130,15 @@ func Run(t *testing.T, cfg runner.Config) {
 						if !ev.Passed {
 							for _, a := range ev.Assertions {
 								if !a.Passed {
-									t.Errorf("[%s] assertion (%s): %s", ev.Step, a.Type, a.Error)
+									label := a.Summary
+									if label == "" {
+										label = a.Type
+									}
+									if a.Want != "" || a.Got != "" {
+										t.Errorf("[%s] ✗ %s — want %s, got %s", ev.Step, label, a.Want, a.Got)
+									} else {
+										t.Errorf("[%s] ✗ %s: %s", ev.Step, label, a.Error)
+									}
 								}
 							}
 						}

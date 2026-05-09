@@ -40,7 +40,7 @@ func TestE2E(t *testing.T) {
 
 // assertOutputLinesGte demonstrates a project-local assertion type. It passes
 // when stdout has at least `expected` non-empty lines.
-func assertOutputLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]string) error {
+func assertOutputLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]string) runner.AssertionResult {
 	expected, ok := a.Expected.(int)
 	if !ok {
 		// YAML decodes integers as int by default but allow int64/float64 too.
@@ -50,7 +50,11 @@ func assertOutputLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]
 		case float64:
 			expected = int(v)
 		default:
-			return fmt.Errorf("x-output-lines-gte: expected must be an integer, got %T", a.Expected)
+			return runner.AssertionResult{
+				Passed:  false,
+				Summary: "x-output-lines-gte",
+				Error:   fmt.Sprintf("x-output-lines-gte: expected must be an integer, got %T", a.Expected),
+			}
 		}
 	}
 	count := 0
@@ -59,8 +63,17 @@ func assertOutputLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]
 			count++
 		}
 	}
+	summary := fmt.Sprintf("non-empty lines >= %d", expected)
+	got := fmt.Sprintf("%d", count)
+	want := fmt.Sprintf("%d", expected)
 	if count < expected {
-		return fmt.Errorf("x-output-lines-gte: got %d non-empty lines, want >= %d", count, expected)
+		return runner.AssertionResult{
+			Passed:  false,
+			Summary: summary,
+			Want:    want,
+			Got:     got,
+			Error:   fmt.Sprintf("x-output-lines-gte: got %d non-empty lines, want >= %d", count, expected),
+		}
 	}
-	return nil
+	return runner.AssertionResult{Passed: true, Summary: summary, Want: want, Got: got}
 }

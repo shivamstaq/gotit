@@ -46,9 +46,23 @@ func runTUI(_ []string) int {
 		return usageError("no specs found in %s — run `gotit init` to scaffold one", specsDir)
 	}
 
+	featuresFile := cfg.FeaturesFile
+	if !filepath.IsAbs(featuresFile) {
+		featuresFile = filepath.Join(projectRoot, featuresFile)
+	}
+
 	entries := make([]*tui.TestEntry, 0, len(specs))
 	for _, s := range specs {
-		entries = append(entries, &tui.TestEntry{Spec: s, State: tui.StatePending, CurrentStep: -1})
+		entry := &tui.TestEntry{Spec: s, State: tui.StatePending, CurrentStep: -1}
+		// Pre-flight: evaluate the requirement types the TUI can check itself
+		// (feature:* and git). Custom requirements stay unknown until the
+		// testdriver runs them — the testdriver emits a skip event in that
+		// case, so the spec still reaches a terminal state.
+		if reqErr := runner.CheckBuiltinRequirements(s.Requires, projectRoot, featuresFile, cfg.EnvPrefix); reqErr != nil {
+			entry.State = tui.StateSkipped
+			entry.ReqError = reqErr.Error()
+		}
+		entries = append(entries, entry)
 	}
 
 	model := tui.NewModel(entries, cfg, projectRoot)

@@ -32,8 +32,9 @@ func builtinAssertions() map[string]AssertionFunc {
 
 // RunAssertion evaluates one assertion against a step result. It resolves
 // template variables in assertion fields first, then dispatches by type.
-// Custom types fall through to the registry passed in.
-func RunAssertion(a Assertion, result StepResult, vars map[string]string, custom map[string]AssertionFunc) error {
+// Custom types fall through to the registry passed in. The Type field on the
+// returned result is left blank — callers fill it from the spec.
+func RunAssertion(a Assertion, result StepResult, vars map[string]string, custom map[string]AssertionFunc) AssertionResult {
 	a.Value = ResolveTemplates(a.Value, vars)
 	a.Pattern = ResolveTemplates(a.Pattern, vars)
 	a.Path = ResolveTemplates(a.Path, vars)
@@ -48,76 +49,100 @@ func RunAssertion(a Assertion, result StepResult, vars map[string]string, custom
 		if fn, ok := custom[a.Type]; ok {
 			return fn(a, result, vars)
 		}
-		return fmt.Errorf("assertion type %q not registered (custom types must be in Config.Assertions)", a.Type)
+		return failed(a.Type, "", "",
+			fmt.Errorf("assertion type %q not registered (custom types must be in Config.Assertions)", a.Type))
 	}
-	return fmt.Errorf("unknown assertion type %q (custom types must use \"x-\" prefix)", a.Type)
+	return failed(a.Type, "", "",
+		fmt.Errorf("unknown assertion type %q (custom types must use \"x-\" prefix)", a.Type))
 }
 
 // --- built-in assertions ---
 
-func assertExitCode(a Assertion, r StepResult, _ map[string]string) error {
+func assertExitCode(a Assertion, r StepResult, _ map[string]string) AssertionResult {
 	expected := toInt(a.Expected)
+	sum := fmt.Sprintf("exit_code == %d", expected)
+	want := strconv.Itoa(expected)
+	got := strconv.Itoa(r.ExitCode)
 	if r.ExitCode != expected {
-		return fmt.Errorf("exit_code: got %d, want %d\nstderr: %s", r.ExitCode, expected, truncate(r.Stderr, 500))
+		return failed(sum, want, got,
+			fmt.Errorf("exit_code: got %d, want %d\nstderr: %s", r.ExitCode, expected, truncate(r.Stderr, 500)))
 	}
-	return nil
+	return passed(sum, want, got)
 }
 
-func assertContains(a Assertion, r StepResult, _ map[string]string) error {
+func assertContains(a Assertion, r StepResult, _ map[string]string) AssertionResult {
+	sum := fmt.Sprintf("stdout contains %q", a.Value)
+	want := fmt.Sprintf("%q", a.Value)
 	if !strings.Contains(r.Stdout, a.Value) {
-		return fmt.Errorf("contains: output does not contain %q\noutput: %s", a.Value, truncate(r.Stdout, 500))
+		return failed(sum, want, snippetLine(r.Stdout, 80),
+			fmt.Errorf("contains: output does not contain %q\noutput: %s", a.Value, truncate(r.Stdout, 500)))
 	}
-	return nil
+	return passed(sum, want, "matched")
 }
 
-func assertNotContains(a Assertion, r StepResult, _ map[string]string) error {
+func assertNotContains(a Assertion, r StepResult, _ map[string]string) AssertionResult {
+	sum := fmt.Sprintf("stdout does not contain %q", a.Value)
+	want := fmt.Sprintf("%q", a.Value)
 	if strings.Contains(r.Stdout, a.Value) {
-		return fmt.Errorf("not_contains: output unexpectedly contains %q", a.Value)
+		return failed(sum, want, snippetLine(r.Stdout, 80),
+			fmt.Errorf("not_contains: output unexpectedly contains %q", a.Value))
 	}
-	return nil
+	return passed(sum, want, "absent")
 }
 
-func assertStderrContains(a Assertion, r StepResult, _ map[string]string) error {
+func assertStderrContains(a Assertion, r StepResult, _ map[string]string) AssertionResult {
+	sum := fmt.Sprintf("stderr contains %q", a.Value)
+	want := fmt.Sprintf("%q", a.Value)
 	if !strings.Contains(r.Stderr, a.Value) {
-		return fmt.Errorf("stderr_contains: stderr does not contain %q\nstderr: %s", a.Value, truncate(r.Stderr, 500))
+		return failed(sum, want, snippetLine(r.Stderr, 80),
+			fmt.Errorf("stderr_contains: stderr does not contain %q\nstderr: %s", a.Value, truncate(r.Stderr, 500)))
 	}
-	return nil
+	return passed(sum, want, "matched")
 }
 
-func assertRegex(a Assertion, r StepResult, _ map[string]string) error {
+func assertRegex(a Assertion, r StepResult, _ map[string]string) AssertionResult {
+	sum := fmt.Sprintf("stdout matches /%s/", a.Pattern)
+	want := "/" + a.Pattern + "/"
 	re, err := regexp.Compile(a.Pattern)
 	if err != nil {
-		return fmt.Errorf("regex: invalid pattern %q: %w", a.Pattern, err)
+		return failed(sum, want, "",
+			fmt.Errorf("regex: invalid pattern %q: %w", a.Pattern, err))
 	}
 	if !re.MatchString(r.Stdout) {
-		return fmt.Errorf("regex: output does not match /%s/\noutput: %s", a.Pattern, truncate(r.Stdout, 500))
+		return failed(sum, want, snippetLine(r.Stdout, 80),
+			fmt.Errorf("regex: output does not match /%s/\noutput: %s", a.Pattern, truncate(r.Stdout, 500)))
 	}
-	return nil
+	return passed(sum, want, "matched")
 }
 
 // assertGoldenFile resolves the path against the project root via the env var
 // set by the runner, then trim-compares stdout to the file contents.
-func assertGoldenFile(a Assertion, r StepResult, _ map[string]string) error {
+func assertGoldenFile(a Assertion, r StepResult, _ map[string]string) AssertionResult {
 	path := a.Path
 	if path == "" {
 		if s, ok := a.Expected.(string); ok {
 			path = s
 		}
 	}
+	displayPath := path
 	if !filepath.IsAbs(path) {
 		root := lookupGoldenRoot()
 		if root != "" {
 			path = filepath.Join(root, path)
 		}
 	}
+	sum := fmt.Sprintf("stdout matches %s", displayPath)
+	want := displayPath
 	expected, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("golden_file: read %s: %w", path, err)
+		return failed(sum, want, "",
+			fmt.Errorf("golden_file: read %s: %w", path, err))
 	}
 	if strings.TrimSpace(r.Stdout) != strings.TrimSpace(string(expected)) {
-		return fmt.Errorf("golden_file: output differs from %s\ngot (first 500 chars): %s", path, truncate(r.Stdout, 500))
+		return failed(sum, want, firstDiverging(string(expected), r.Stdout, 80),
+			fmt.Errorf("golden_file: output differs from %s\ngot (first 500 chars): %s", path, truncate(r.Stdout, 500)))
 	}
-	return nil
+	return passed(sum, want, "matched")
 }
 
 // lookupGoldenRoot searches the environment for any *_E2E_PROJECT_ROOT var.
@@ -132,57 +157,81 @@ func lookupGoldenRoot() string {
 	return ""
 }
 
-func assertJSONPath(a Assertion, r StepResult, _ map[string]string) error {
-	parsed, err := oj.ParseString(r.Stdout)
-	if err != nil {
-		return fmt.Errorf("json_path: parse JSON: %w\noutput: %s", err, truncate(r.Stdout, 300))
-	}
-	jpath, err := jp.ParseString(a.Path)
-	if err != nil {
-		return fmt.Errorf("json_path: invalid path %q: %w", a.Path, err)
-	}
-	results := jpath.Get(parsed)
-	if len(results) == 0 {
-		return fmt.Errorf("json_path: %q matched nothing", a.Path)
-	}
-
+func assertJSONPath(a Assertion, r StepResult, _ map[string]string) AssertionResult {
 	op := a.Op
 	if op == "" {
 		op = "=="
 	}
+	sum := fmt.Sprintf("%s %s %v", a.Path, op, a.Expected)
+	want := fmt.Sprintf("%v", a.Expected)
+
+	parsed, err := oj.ParseString(r.Stdout)
+	if err != nil {
+		return failed(sum, want, "",
+			fmt.Errorf("json_path: parse JSON: %w\noutput: %s", err, truncate(r.Stdout, 300)))
+	}
+	jpath, err := jp.ParseString(a.Path)
+	if err != nil {
+		return failed(sum, want, "",
+			fmt.Errorf("json_path: invalid path %q: %w", a.Path, err))
+	}
+	results := jpath.Get(parsed)
+	if len(results) == 0 {
+		return failed(sum, want, "(no match)",
+			fmt.Errorf("json_path: %q matched nothing", a.Path))
+	}
 	actual := results[0]
+	got := snippetLine(valueToString(actual), 80)
 
 	switch op {
 	case "==":
 		if !jsonEqual(actual, a.Expected) {
-			return fmt.Errorf("json_path: %s == %v, want %v (got type %T)", a.Path, actual, a.Expected, actual)
+			return failed(sum, want, got,
+				fmt.Errorf("json_path: %s == %v, want %v (got type %T)", a.Path, actual, a.Expected, actual))
 		}
 	case "!=":
 		if jsonEqual(actual, a.Expected) {
-			return fmt.Errorf("json_path: %s should not equal %v", a.Path, a.Expected)
+			return failed(sum, want, got,
+				fmt.Errorf("json_path: %s should not equal %v", a.Path, a.Expected))
 		}
 	case ">", ">=", "<", "<=":
-		return compareNumeric(a.Path, op, actual, a.Expected)
+		if err := compareNumeric(a.Path, op, actual, a.Expected); err != nil {
+			return failed(sum, want, got, err)
+		}
 	case "contains":
-		return jsonContains(a.Path, actual, a.Expected)
+		if err := jsonContains(a.Path, actual, a.Expected); err != nil {
+			return failed(sum, want, got, err)
+		}
 	case "contains_any":
-		return jsonContainsAny(a.Path, results, a.Expected)
+		if err := jsonContainsAny(a.Path, results, a.Expected); err != nil {
+			return failed(sum, want, snippetLine(fmt.Sprintf("%v", results), 80), err)
+		}
 	case "length_gte":
-		return jsonLengthGte(a.Path, actual, a.Expected)
+		if err := jsonLengthGte(a.Path, actual, a.Expected); err != nil {
+			return failed(sum, want, got, err)
+		}
 	default:
-		return fmt.Errorf("json_path: unknown op %q", op)
+		return failed(sum, want, got, fmt.Errorf("json_path: unknown op %q", op))
 	}
-	return nil
+	return passed(sum, want, snippetLine(valueToString(actual), 40))
 }
 
-func assertCount(a Assertion, r StepResult, _ map[string]string) error {
+func assertCount(a Assertion, r StepResult, _ map[string]string) AssertionResult {
+	op := a.Op
+	if op == "" {
+		op = "=="
+	}
+	expected := toInt(a.Expected)
+	sum := fmt.Sprintf("count(%s) %s %d", a.Path, op, expected)
+	want := strconv.Itoa(expected)
+
 	parsed, err := oj.ParseString(r.Stdout)
 	if err != nil {
-		return fmt.Errorf("count: parse JSON: %w", err)
+		return failed(sum, want, "", fmt.Errorf("count: parse JSON: %w", err))
 	}
 	jpath, err := jp.ParseString(a.Path)
 	if err != nil {
-		return fmt.Errorf("count: invalid path %q: %w", a.Path, err)
+		return failed(sum, want, "", fmt.Errorf("count: invalid path %q: %w", a.Path, err))
 	}
 	results := jpath.Get(parsed)
 
@@ -196,13 +245,55 @@ func assertCount(a Assertion, r StepResult, _ map[string]string) error {
 	} else {
 		length = len(results)
 	}
+	got := strconv.Itoa(length)
 
-	expected := toInt(a.Expected)
-	op := a.Op
-	if op == "" {
-		op = "=="
+	if err := compareInts(fmt.Sprintf("count(%s)", a.Path), op, length, expected); err != nil {
+		return failed(sum, want, got, err)
 	}
-	return compareInts(fmt.Sprintf("count(%s)", a.Path), op, length, expected)
+	return passed(sum, want, got)
+}
+
+// --- result helpers ---
+
+func passed(summary, want, got string) AssertionResult {
+	return AssertionResult{Passed: true, Summary: summary, Want: want, Got: got}
+}
+
+func failed(summary, want, got string, err error) AssertionResult {
+	r := AssertionResult{Passed: false, Summary: summary, Want: want, Got: got}
+	if err != nil {
+		r.Error = err.Error()
+	}
+	return r
+}
+
+// snippetLine collapses newlines to "\n" and truncates to max runes so the
+// caller can render Got on a single line in the TUI.
+func snippetLine(s string, max int) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\t", " ")
+	if len(s) > max {
+		return s[:max] + "..."
+	}
+	return s
+}
+
+// firstDiverging returns the first line of `got` that doesn't match `want`,
+// truncated to max chars. Falls back to a snippet of got if the diff is at EOF.
+func firstDiverging(want, got string, max int) string {
+	wlines := strings.Split(want, "\n")
+	glines := strings.Split(got, "\n")
+	for i := 0; i < len(glines); i++ {
+		if i >= len(wlines) || glines[i] != wlines[i] {
+			line := glines[i]
+			if len(line) > max {
+				line = line[:max] + "..."
+			}
+			return fmt.Sprintf("line %d: %s", i+1, line)
+		}
+	}
+	return snippetLine(got, max)
 }
 
 // --- helpers ---

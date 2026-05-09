@@ -77,8 +77,12 @@ type RepoHelper func(projectRoot, workDir string, args map[string]any) error
 // Return nil to satisfy; return an error to skip dependent specs.
 type RequirementChecker func(projectRoot string) error
 
-// AssertionFunc evaluates one assertion against a step's output.
-type AssertionFunc func(a Assertion, r StepResult, vars map[string]string) error
+// AssertionFunc evaluates one assertion against a step's output and returns a
+// structured result. Implementations should populate Summary (a one-line
+// description of what was checked, e.g. `stdout contains "foo"`), Want (the
+// expected value in display form), and Got (the actual value/snippet). Type is
+// filled in by the runner from the spec, so leave it blank.
+type AssertionFunc func(a Assertion, r StepResult, vars map[string]string) AssertionResult
 
 // withDefaults returns a copy of cfg with empty fields filled in.
 func (c Config) withDefaults() Config {

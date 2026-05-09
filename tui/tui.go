@@ -191,12 +191,16 @@ func (m *Model) handleSpecEvent(msg specEventMsg) (tea.Model, tea.Cmd) {
 
 	case "spec_end":
 		entry.DurationMs = ev.DurationMs
-		if ev.Passed {
+		switch {
+		case ev.Skipped:
+			entry.State = StateSkipped
+			entry.ReqError = ev.Error
+		case ev.Passed:
 			entry.State = StatePassed
-		} else {
+		default:
 			entry.State = StateFailed
 		}
-		if ev.Error != "" {
+		if ev.Error != "" && !ev.Skipped {
 			entry.Error = ev.Error
 		}
 	}

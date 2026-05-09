@@ -26,6 +26,7 @@ type SpecEvent struct {
 	DurationMs int64
 	Assertions []AssertionResult
 	Passed     bool
+	Skipped    bool // spec_end only: true when the testdriver skipped on unmet requirements
 	WorkDir    string
 	HomeDir    string
 	BinDir     string
@@ -158,10 +159,9 @@ func (r *Runner) RunSpec(ctx context.Context, spec *Spec, events chan<- SpecEven
 		stepPassed := true
 		var assertions []AssertionResult
 		for _, a := range step.Assert {
-			err := RunAssertion(a, result, vars, r.Config.Assertions)
-			ar := AssertionResult{Type: a.Type, Passed: err == nil}
-			if err != nil {
-				ar.Error = err.Error()
+			ar := RunAssertion(a, result, vars, r.Config.Assertions)
+			ar.Type = a.Type
+			if !ar.Passed {
 				stepPassed = false
 			}
 			assertions = append(assertions, ar)

@@ -4,13 +4,20 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/shivamstaq/gotit/runner"
 )
 
-const maxOutputDisplay = 100 * 1024 // truncate per-step output beyond ~100KB
+const (
+	maxOutputDisplay = 100 * 1024 // truncate per-step output beyond ~100KB
+	assertGotInline  = 80         // single-line Got snippet width on failure
+	assertGotPass    = 40         // single-line Got snippet width on pass
+)
 
 // stepViewerModel is the right panel. Its content depends on test state:
 //   - pending/skipped: spec metadata + notes preview
@@ -98,8 +105,7 @@ func (m *stepViewerModel) updateContent() {
 func (m *stepViewerModel) renderPending() {
 	var b strings.Builder
 	spec := m.entry.Spec
-	fmt.Fprintf(&b, "%s\n", headerStyle.Render(spec.Wave+"/"+spec.Name))
-	fmt.Fprintf(&b, "\n%s %s\n", dimStyle.Render("Description:"), spec.Description)
+	fmt.Fprintf(&b, "%s %s\n", dimStyle.Render("Description:"), spec.Description)
 	if len(spec.Tags) > 0 {
 		fmt.Fprintf(&b, "%s %s\n", dimStyle.Render("Tags:"), strings.Join(spec.Tags, ", "))
 	}
@@ -145,18 +151,86 @@ func renderNotesPreview(path string, maxLines int) string {
 func (m *stepViewerModel) renderSkipped() {
 	var b strings.Builder
 	spec := m.entry.Spec
-	fmt.Fprintf(&b, "%s\n", headerStyle.Render(spec.Wave+"/"+spec.Name))
-	fmt.Fprintf(&b, "\n%s\n", skippedStyle.Render("⊘ SKIPPED"))
-	fmt.Fprintf(&b, "%s\n", m.entry.ReqError)
+	fmt.Fprintf(&b, "%s %s\n", dimStyle.Render("Description:"), spec.Description)
+	if len(spec.Tags) > 0 {
+		fmt.Fprintf(&b, "%s %s\n", dimStyle.Render("Tags:"), strings.Join(spec.Tags, ", "))
+	}
+	if len(spec.Requires) > 0 {
+		fmt.Fprintf(&b, "%s %s\n", dimStyle.Render("Requires:"), strings.Join(spec.Requires, ", "))
+	}
+	fmt.Fprintf(&b, "%s %d (+ %d setup)\n", dimStyle.Render("Steps:"), len(spec.Steps), len(spec.Setup))
+
+	b.WriteString("\n" + renderSkipBox(m.entry.ReqError, m.width-4) + "\n")
+
+	if preview := renderNotesPreview(spec.NotesPath, 12); preview != "" {
+		fmt.Fprintf(&b, "\n%s\n%s\n", headerStyle.Render("Notes:"), preview)
+	}
+
 	m.viewport.SetContent(b.String())
 	m.viewport.GotoTop()
 }
 
+// renderSkipBox builds the bordered SKIPPED block: a bold-red ⊘ SKIPPED badge,
+// then the main reason, then a dimmed hint. Lines are word-wrapped to the box's
+// inner width.
+func renderSkipBox(reason string, panelWidth int) string {
+	inner := maxWrapWidth(panelWidth - 4) // subtract border + padding
+	wrap := lipgloss.NewStyle().Width(inner)
+
+	var inside strings.Builder
+	inside.WriteString(skipBadgeStyle.Render("⊘ SKIPPED"))
+	if reason != "" {
+		main, hint := splitSkipReason(reason)
+		inside.WriteString("\n" + wrap.Render(main))
+		if hint != "" {
+			inside.WriteString("\n" + wrap.Foreground(lipgloss.Color("240")).Render(hint))
+		}
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1).
+		Render(inside.String())
+}
+
+// splitSkipReason separates the headline from any trailing parenthesized hint
+// so the TUI can render the main reason on one line and the (typically longer)
+// "how to fix" hint dimmed below it. Absolute paths in the hint are reduced
+// to their basenames to keep the line short. Falls back to (msg, "") when
+// there's no parenthesized tail.
+func splitSkipReason(msg string) (main, hint string) {
+	msg = strings.TrimSpace(msg)
+	open := strings.LastIndex(msg, " (")
+	if open < 0 || !strings.HasSuffix(msg, ")") {
+		return msg, ""
+	}
+	hint = strings.TrimSuffix(msg[open+2:], ")")
+	hint = shortenPaths(hint)
+	return msg[:open], hint
+}
+
+// shortenPaths replaces absolute paths in s with their basenames so a verbose
+// "add to /long/abs/path/features.yaml" becomes "add to features.yaml".
+func shortenPaths(s string) string {
+	fields := strings.Fields(s)
+	for i, f := range fields {
+		if strings.HasPrefix(f, "/") && strings.Contains(f, "/") {
+			fields[i] = filepath.Base(f)
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
+// maxWrapWidth clamps the wrap width so very wide terminals don't yield
+// awkwardly long single lines, while still respecting smaller widths.
+func maxWrapWidth(w int) int {
+	return min(80, max(20, w))
+}
+
 func (m *stepViewerModel) renderQueued() {
 	var b strings.Builder
-	spec := m.entry.Spec
-	fmt.Fprintf(&b, "%s\n", headerStyle.Render(spec.Wave+"/"+spec.Name))
-	fmt.Fprintf(&b, "\n%s\n", queuedStyle.Render("◎ Queued — waiting for worker slot"))
+	fmt.Fprintf(&b, "%s\n", queuedStyle.Render("◎ Queued — waiting for worker slot"))
 	m.viewport.SetContent(b.String())
 	m.viewport.GotoTop()
 }
@@ -165,12 +239,8 @@ func (m *stepViewerModel) renderRunning() {
 	var b strings.Builder
 	spec := m.entry.Spec
 	totalSteps := len(spec.Setup) + len(spec.Steps)
-	currentIdx := m.entry.CurrentStep + 1
-	if currentIdx < 1 {
-		currentIdx = 1
-	}
-	fmt.Fprintf(&b, "%s > %s step %d/%d\n\n",
-		headerStyle.Render(spec.Wave+"/"+spec.Name),
+	currentIdx := max(m.entry.CurrentStep+1, 1)
+	fmt.Fprintf(&b, "%s step %d/%d\n\n",
 		runningStyle.Render("running"),
 		currentIdx, totalSteps)
 
@@ -233,27 +303,7 @@ func (m *stepViewerModel) renderAllSteps() {
 			}
 		}
 		if len(step.Assertions) > 0 {
-			passCount := 0
-			var failures []string
-			for _, a := range step.Assertions {
-				if a.Passed {
-					passCount++
-				} else {
-					msg := a.Type
-					if a.Error != "" {
-						msg += " — " + a.Error
-					}
-					failures = append(failures, msg)
-				}
-			}
-			if len(failures) == 0 {
-				fmt.Fprintf(&b, "%s\n", dimStyle.Render(fmt.Sprintf("assertions: %d/%d passed", passCount, len(step.Assertions))))
-			} else {
-				fmt.Fprintf(&b, "assertions: %d/%d passed\n", passCount, len(step.Assertions))
-				for _, f := range failures {
-					fmt.Fprintf(&b, "%s\n", assertFailStyle.Render("  ✗ "+f))
-				}
-			}
+			renderAssertions(&b, step.Assertions, false)
 		}
 	}
 	m.viewport.SetContent(b.String())
@@ -322,24 +372,7 @@ func (m *stepViewerModel) renderStepReview() {
 		step.ExitCode, step.DurationMs, statusStyle.Render(statusLabel))
 
 	if len(step.Assertions) > 0 {
-		passCount := 0
-		for _, a := range step.Assertions {
-			if a.Passed {
-				passCount++
-			}
-		}
-		fmt.Fprintf(&b, "assertions: %d/%d passed\n", passCount, len(step.Assertions))
-		for _, a := range step.Assertions {
-			if a.Passed {
-				b.WriteString(assertPassStyle.Render("  ✓ "+a.Type) + "\n")
-			} else {
-				m := a.Type
-				if a.Error != "" {
-					m += " — " + a.Error
-				}
-				b.WriteString(assertFailStyle.Render("  ✗ "+m) + "\n")
-			}
-		}
+		renderAssertions(&b, step.Assertions, true)
 	}
 	m.viewport.SetContent(b.String())
 	m.viewport.GotoTop()
@@ -391,4 +424,72 @@ func (m *stepViewerModel) View(focused bool, shellActive bool) string {
 		Width(m.width - 2).
 		Height(m.height).
 		Render(body)
+}
+
+// renderAssertions writes a compact, structured block summarizing the step's
+// assertions: a header line with pass/total, then one line per pass and up to
+// three lines per failure (✗ summary + indented want/got). When detail is
+// false, only failures are listed individually (used in the all-steps overview
+// to keep noise down); when true, every assertion is listed (focused step view).
+func renderAssertions(b *strings.Builder, asserts []runner.AssertionResult, detail bool) {
+	passCount := 0
+	for _, a := range asserts {
+		if a.Passed {
+			passCount++
+		}
+	}
+	header := fmt.Sprintf("assertions: %d/%d passed", passCount, len(asserts))
+	if passCount == len(asserts) {
+		fmt.Fprintf(b, "%s\n", dimStyle.Render(header))
+	} else {
+		fmt.Fprintf(b, "%s\n", header)
+	}
+
+	for _, a := range asserts {
+		if a.Passed {
+			if !detail {
+				continue
+			}
+			line := assertPassStyle.Render("  ✓ " + assertLabel(a))
+			if a.Got != "" {
+				line += dimStyle.Render("  → " + truncRunes(a.Got, assertGotPass))
+			}
+			b.WriteString(line + "\n")
+		} else {
+			b.WriteString(assertFailStyle.Render("  ✗ "+assertLabel(a)) + "\n")
+			// Show want/got when the runner provided them; otherwise fall back
+			// to the legacy single-line "type — error" format inline (older logs).
+			if a.Want != "" || a.Got != "" {
+				if a.Want != "" {
+					b.WriteString(dimStyle.Render("       want: ") + truncRunes(a.Want, assertGotInline) + "\n")
+				}
+				if a.Got != "" {
+					b.WriteString(dimStyle.Render("       got:  ") + truncRunes(a.Got, assertGotInline) + "\n")
+				}
+			} else if a.Error != "" {
+				// Legacy fallback: surface the raw error on a dimmed indented line.
+				first := strings.SplitN(a.Error, "\n", 2)[0]
+				b.WriteString(dimStyle.Render("       "+truncRunes(first, assertGotInline)) + "\n")
+			}
+		}
+	}
+}
+
+// assertLabel returns the assertion's display label: Summary if present,
+// otherwise the bare type (legacy logs).
+func assertLabel(a runner.AssertionResult) string {
+	if a.Summary != "" {
+		return a.Summary
+	}
+	return a.Type
+}
+
+// truncRunes truncates s to max runes, appending "..." when shortened. It
+// operates on runes (not bytes) to keep multibyte characters intact.
+func truncRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "..."
 }

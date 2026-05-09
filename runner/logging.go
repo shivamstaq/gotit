@@ -28,11 +28,18 @@ type SpecStartRecord struct {
 }
 
 // SpecEndRecord is the last JSONL line for a spec.
+//
+// Skipped distinguishes a requirements skip (e.g. unmet feature flag) from a
+// genuine failure. When Skipped is true, Passed is false and Error carries the
+// reason — the TUI uses this to land the spec on StateSkipped rather than
+// StateFailed and to surface the reason in its right panel.
 type SpecEndRecord struct {
 	Type       string `json:"type"`
 	Wave       string `json:"wave"`
 	Spec       string `json:"spec"`
 	Passed     bool   `json:"passed"`
+	Skipped    bool   `json:"skipped,omitempty"`
+	Error      string `json:"error,omitempty"`
 	DurationMs int64  `json:"duration_ms"`
 }
 
@@ -54,10 +61,18 @@ type StepLog struct {
 }
 
 // AssertionResult records one assertion's outcome.
+//
+// Summary, Want, and Got give the TUI (and the test driver's t.Errorf output)
+// enough context to show what was checked without rereading the full step
+// stdout. Error is kept for back-compat with older logs and for the testdriver
+// fallback when richer fields are absent.
 type AssertionResult struct {
-	Type   string `json:"type"`
-	Passed bool   `json:"passed"`
-	Error  string `json:"error,omitempty"`
+	Type    string `json:"type"`
+	Passed  bool   `json:"passed"`
+	Summary string `json:"summary,omitempty"`
+	Want    string `json:"want,omitempty"`
+	Got     string `json:"got,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // JSONLLogger writes one record per line. Safe for concurrent use.

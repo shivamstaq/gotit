@@ -37,6 +37,9 @@ var (
 	assertPassStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	assertFailStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
 
+	// Skipped badge in the right-panel detail view (bold, dim red).
+	skipBadgeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("124"))
+
 	// Shell pane indicator.
 	shellActiveStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("82"))
 	shellExitedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))

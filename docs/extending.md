@@ -80,12 +80,23 @@ Don't make checkers expensive (they run on every test). Cache results in package
 Signature:
 
 ```go
-func(a runner.Assertion, r runner.StepResult, vars map[string]string) error
+func(a runner.Assertion, r runner.StepResult, vars map[string]string) runner.AssertionResult
 ```
 
 - `a` — the assertion entry from YAML, with template variables already resolved in string fields.
 - `r` — the step's result (`Stdout`, `Stderr`, `ExitCode`, `Duration`).
 - `vars` — the captured variables map (rarely needed; templating already happened).
+
+Return a populated `AssertionResult`:
+
+| Field | Set to |
+|---|---|
+| `Passed` | `true` on success, `false` on failure. |
+| `Summary` | One-line description of the check, e.g. `non-empty lines >= 100`. Shown in the TUI. |
+| `Want` | Expected value in display form. |
+| `Got` | Actual value or a short snippet (kept to one line; truncated for display). |
+| `Error` | Full human-readable error (used by the test driver's `t.Errorf` fallback). |
+| `Type` | Leave blank — the runner fills it from the spec. |
 
 Custom types **must** start with `x-`. The JSON Schema rejects everything else.
 
@@ -102,7 +113,7 @@ Reuse existing field names:
 Example: an assertion that the stdout has at least N non-empty lines.
 
 ```go
-func AssertLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]string) error {
+func AssertLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]string) runner.AssertionResult {
     expected, ok := a.Expected.(int)
     if !ok {
         switch v := a.Expected.(type) {
@@ -111,7 +122,10 @@ func AssertLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]string
         case float64:
             expected = int(v)
         default:
-            return fmt.Errorf("x-output-lines-gte: expected must be an integer, got %T", a.Expected)
+            return runner.AssertionResult{
+                Passed: false,
+                Error:  fmt.Sprintf("x-output-lines-gte: expected must be an integer, got %T", a.Expected),
+            }
         }
     }
     count := 0
@@ -120,10 +134,13 @@ func AssertLinesGte(a runner.Assertion, r runner.StepResult, _ map[string]string
             count++
         }
     }
-    if count < expected {
-        return fmt.Errorf("x-output-lines-gte: got %d non-empty lines, want >= %d", count, expected)
+    summary := fmt.Sprintf("non-empty lines >= %d", expected)
+    return runner.AssertionResult{
+        Passed:  count >= expected,
+        Summary: summary,
+        Want:    fmt.Sprintf("%d", expected),
+        Got:     fmt.Sprintf("%d", count),
     }
-    return nil
 }
 ```
 

@@ -61,6 +61,8 @@ type JSONLEvent struct {
 	Stderr     string                   `json:"stderr,omitempty"`
 	Assertions []runner.AssertionResult `json:"assertions,omitempty"`
 	Passed     bool                     `json:"passed,omitempty"`
+	Skipped    bool                     `json:"skipped,omitempty"`
+	Error      string                   `json:"error,omitempty"`
 	WorkDir    string                   `json:"work_dir,omitempty"`
 	HomeDir    string                   `json:"home_dir,omitempty"`
 	BinDir     string                   `json:"bin_dir,omitempty"`
@@ -158,6 +160,8 @@ func (e JSONLEvent) ToSpecEvent() runner.SpecEvent {
 		DurationMs: e.DurationMs,
 		Assertions: e.Assertions,
 		Passed:     e.Passed,
+		Skipped:    e.Skipped,
+		Error:      e.Error,
 		WorkDir:    e.WorkDir,
 		HomeDir:    e.HomeDir,
 		BinDir:     e.BinDir,
