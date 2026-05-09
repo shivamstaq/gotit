@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 )
 
 const usageText = `gotit — interactive E2E test runner for Go CLIs
@@ -33,8 +34,48 @@ The bare TUI walks up to the nearest go.mod and reads tests/e2e/gotit.yaml
 learn the project's wiring. See https://github.com/shivamstaq/gotit/blob/main/SPEC.md.
 `
 
-// Version is set via -ldflags at build time, falling back to "dev" otherwise.
-var Version = "dev"
+// Version is overridable via -ldflags. When empty, version() falls back to
+// the module version embedded by `go install module@vX.Y.Z`, then to a VCS
+// commit-derived "dev" string for local builds.
+var Version = ""
+
+// version resolves the binary's version string, in order of preference:
+//  1. The -ldflags-injected Version variable, if set.
+//  2. The Go module version recorded in the binary by `go install` (e.g.
+//     "v0.2.0" when installed via `go install github.com/.../cmd/gotit@v0.2.0`).
+//  3. A "dev (<short-sha>[, dirty])" string assembled from VCS build settings.
+//  4. Plain "dev" if no build info is available.
+func version() string {
+	if Version != "" {
+		return Version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var rev, modified string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			if len(s.Value) >= 7 {
+				rev = s.Value[:7]
+			} else {
+				rev = s.Value
+			}
+		case "vcs.modified":
+			if s.Value == "true" {
+				modified = ", dirty"
+			}
+		}
+	}
+	if rev != "" {
+		return fmt.Sprintf("dev (%s%s)", rev, modified)
+	}
+	return "dev"
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -48,7 +89,7 @@ func main() {
 	case "doctor":
 		os.Exit(runDoctor(os.Args[2:]))
 	case "version", "--version", "-v":
-		fmt.Println("gotit", Version)
+		fmt.Println("gotit", version())
 		return
 	case "help", "--help", "-h":
 		fmt.Print(usageText)
