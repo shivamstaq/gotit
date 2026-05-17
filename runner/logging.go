@@ -11,9 +11,13 @@ import (
 
 // Record type constants for JSONL entries.
 const (
-	RecordTypeSpecStart = "spec_start"
-	RecordTypeStep      = "step"
-	RecordTypeSpecEnd   = "spec_end"
+	RecordTypeSpecStart   = "spec_start"
+	RecordTypeStep        = "step"
+	RecordTypeSpecEnd     = "spec_end"
+	RecordTypeDaemonStart = "daemon_start"
+	RecordTypeDaemonReady = "daemon_ready"
+	RecordTypeDaemonDied  = "daemon_died"
+	RecordTypeDaemonStop  = "daemon_stop"
 )
 
 // SpecStartRecord is the first JSONL line for a spec.
@@ -73,6 +77,31 @@ type AssertionResult struct {
 	Want    string `json:"want,omitempty"`
 	Got     string `json:"got,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+// DaemonEventRecord is one JSONL line for a daemon lifecycle transition.
+// Used for daemon_start, daemon_ready, daemon_died, and daemon_stop. Fields
+// not relevant to a given transition are omitted.
+type DaemonEventRecord struct {
+	Type          string            `json:"type"`
+	Timestamp     time.Time         `json:"timestamp"`
+	Wave          string            `json:"wave"`
+	Spec          string            `json:"spec"`
+	Daemon        string            `json:"daemon"`
+	PID           int               `json:"pid,omitempty"`
+	Command       string            `json:"command,omitempty"`
+	Ready         string            `json:"ready,omitempty"`
+	Signal        string            `json:"signal,omitempty"`
+	GraceMs       int64             `json:"grace_ms,omitempty"`
+	ExitCode      int               `json:"exit_code,omitempty"`
+	DurationMs    int64             `json:"duration_ms,omitempty"`
+	CleanExit     bool              `json:"clean_exit,omitempty"`
+	ExitMismatch  bool              `json:"exit_mismatch,omitempty"`
+	ExpectedExit  *int              `json:"expected_exit,omitempty"`
+	LogTail       string            `json:"log_tail,omitempty"`
+	LogAssertions []AssertionResult `json:"log_assertions,omitempty"`
+	Passed        bool              `json:"passed"`
+	Error         string            `json:"error,omitempty"`
 }
 
 // JSONLLogger writes one record per line. Safe for concurrent use.

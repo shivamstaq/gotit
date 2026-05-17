@@ -67,6 +67,11 @@
       "type": "array",
       "items": { "$ref": "#/$defs/step" }
     },
+    "daemons": {
+      "description": "Long-running processes spawned by the runner and reaped at teardown. Top-level daemons declare a phase (pre_setup or post_setup). See SPEC.md §6.5.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/daemon" }
+    },
     "steps": {
       "description": "Test steps; assertion failures are reported per step.",
       "type": "array",
@@ -92,18 +97,137 @@
           "additionalProperties": { "type": "string" }
         },
         "timeout": {
-          "description": "Go duration string (e.g. \"30s\", \"2m\").",
+          "description": "Go duration string (e.g. \"30s\", \"2m\"). On background:true steps this is the readiness start timeout.",
           "type": "string",
           "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$"
         },
         "capture": {
-          "description": "Map of variable name to capture expression. Expression is a JSONPath ('$.path') or 'regex:(pattern)'.",
+          "description": "Map of variable name to capture expression. Expression is a JSONPath ('$.path') or 'regex:(pattern)'. Forbidden when background:true.",
           "type": "object",
           "additionalProperties": { "type": "string" }
         },
         "assert": {
+          "description": "Step assertions. Forbidden when background:true (stdout is not captured at point-of-use).",
           "type": "array",
           "items": { "$ref": "#/$defs/assertion" }
+        },
+        "background": {
+          "description": "When true, the command is started as a daemon and the step succeeds as soon as ready passes. Forbids assert/capture; allows ready/stop/log_assert. See SPEC.md §6.5.",
+          "type": "boolean"
+        },
+        "ready": { "$ref": "#/$defs/ready_check" },
+        "stop": { "$ref": "#/$defs/stop_spec" },
+        "log_assert": {
+          "description": "Assertions evaluated at teardown against the daemon's captured stdout+stderr. Only valid when background:true.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/assertion" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "background": { "const": true } }, "required": ["background"] },
+          "then": {
+            "not": { "anyOf": [{ "required": ["assert"] }, { "required": ["capture"] }] }
+          }
+        },
+        {
+          "if": { "not": { "properties": { "background": { "const": true } }, "required": ["background"] } },
+          "then": {
+            "not": { "anyOf": [{ "required": ["ready"] }, { "required": ["stop"] }, { "required": ["log_assert"] }] }
+          }
+        }
+      ]
+    },
+    "daemon": {
+      "type": "object",
+      "required": ["name", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+        "command": { "type": "string", "minLength": 1 },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "phase": {
+          "description": "When to start: pre_setup runs before setup steps; post_setup (default) runs after.",
+          "type": "string",
+          "enum": ["pre_setup", "post_setup"]
+        },
+        "start_timeout": {
+          "description": "Go duration. Total time allowed to reach ready. Default 10s.",
+          "type": "string",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$"
+        },
+        "ready": { "$ref": "#/$defs/ready_check" },
+        "stop": { "$ref": "#/$defs/stop_spec" },
+        "capture": {
+          "description": "One-shot capture run against the daemon's stdout+stderr log once ready, exposing values as {{ var }} to later steps.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "log_assert": {
+          "description": "Assertions evaluated at teardown against the daemon's captured stdout+stderr.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/assertion" }
+        }
+      }
+    },
+    "ready_check": {
+      "description": "Gates daemon startup. Exactly one of tcp / log_contains / command / pid_file may be set; empty means 'started == ready'.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tcp": {
+          "description": "host:port to poll with net.Dial; ready when a TCP connection succeeds.",
+          "type": "string"
+        },
+        "log_contains": {
+          "description": "Substring to search for in the captured stdout+stderr.",
+          "type": "string"
+        },
+        "command": {
+          "description": "Probe command; ready when it exits 0.",
+          "type": "string"
+        },
+        "pid_file": {
+          "description": "Path that must exist and be non-empty.",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "Go duration. Default 5s.",
+          "type": "string",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$"
+        },
+        "interval": {
+          "description": "Go duration. Default 100ms.",
+          "type": "string",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$"
+        }
+      },
+      "oneOf": [
+        { "required": ["tcp"] },
+        { "required": ["log_contains"] },
+        { "required": ["command"] },
+        { "required": ["pid_file"] },
+        { "not": { "anyOf": [{ "required": ["tcp"] }, { "required": ["log_contains"] }, { "required": ["command"] }, { "required": ["pid_file"] }] } }
+      ]
+    },
+    "stop_spec": {
+      "description": "Teardown semantics. Defaults: signal=TERM, grace=5s, expected_exit=0. After grace, SIGKILL is sent and the spec fails.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signal": {
+          "type": "string",
+          "enum": ["TERM", "INT", "HUP", "QUIT"]
+        },
+        "grace": {
+          "type": "string",
+          "pattern": "^[0-9]+(ns|us|µs|ms|s|m|h)([0-9]+(ns|us|µs|ms|s|m|h))*$"
+        },
+        "expected_exit": {
+          "type": "integer"
         }
       }
     },

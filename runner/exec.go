@@ -15,14 +15,9 @@ import (
 // Templates in step.Command are resolved against vars before execution.
 // If the first command token equals cfg.BinaryName, it is rewritten to binPath.
 func ExecuteStep(ctx context.Context, cfg Config, step Step, workDir string, env []string, vars map[string]string, binPath string) StepResult {
-	cmdLine := ResolveTemplates(step.Command, vars)
-	parts := SplitCommand(cmdLine)
-	if len(parts) == 0 {
-		return StepResult{Name: step.Name, ExitCode: -1, Errors: []string{"empty command"}}
-	}
-
-	if parts[0] == cfg.BinaryName {
-		parts[0] = binPath
+	parts, cmdLine, err := PrepareCommand(cfg, step.Command, vars, binPath)
+	if err != nil {
+		return StepResult{Name: step.Name, ExitCode: -1, Errors: []string{err.Error()}}
 	}
 
 	timeout := cfg.DefaultTimeout
@@ -44,7 +39,7 @@ func ExecuteStep(ctx context.Context, cfg Config, step Step, workDir string, env
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	duration := time.Since(start).Milliseconds()
 
 	exitCode := 0
@@ -92,6 +87,22 @@ func BuildEnv(cfg Config, homeDir, binDir, projectRoot string) []string {
 		"GIT_CONFIG_NOSYSTEM=1",
 		"TERM=dumb",
 	}
+}
+
+// PrepareCommand resolves templates against vars, splits the command line,
+// and rewrites the first token to binPath if it equals cfg.BinaryName. Returns
+// (parts, resolvedCmdLine, err). Shared by ExecuteStep and StartDaemon so they
+// agree on tokenization and binary substitution.
+func PrepareCommand(cfg Config, command string, vars map[string]string, binPath string) ([]string, string, error) {
+	cmdLine := ResolveTemplates(command, vars)
+	parts := SplitCommand(cmdLine)
+	if len(parts) == 0 {
+		return nil, cmdLine, fmt.Errorf("empty command")
+	}
+	if parts[0] == cfg.BinaryName {
+		parts[0] = binPath
+	}
+	return parts, cmdLine, nil
 }
 
 // SplitCommand tokenizes a command line, respecting single and double quotes.

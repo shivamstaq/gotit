@@ -184,6 +184,138 @@ ExecuteStep(ctx, cfg, step, workDir, env, vars, binPath) → StepResult
 
 ---
 
+## 6.5 Daemon Lifecycle
+
+Many CLIs are daemons or have daemon-mode subcommands: servers, watchers, agents, sync workers. Testing them requires "start the process, exercise it, stop it" semantics that don't fit the synchronous step model. gotit gives daemons their own lifecycle, distinct from steps.
+
+### Two surfaces
+
+**Top-level `daemons:` block** — the primary form. Each entry declares a named daemon with explicit start/ready/stop/teardown contracts. Use this when the daemon is part of the spec's *environment* — it would naturally be described in the test plan as "the server" rather than as "an action".
+
+```yaml
+daemons:
+  - name: server
+    command: myapp serve --port-file $HOME/port
+    phase: post_setup              # default; or pre_setup
+    start_timeout: 10s
+    ready:
+      tcp: "localhost:8080"
+      timeout: 5s
+      interval: 100ms
+    stop:
+      signal: TERM                 # TERM (default) | INT | HUP | QUIT
+      grace: 5s
+      expected_exit: 0
+    capture:
+      port: "regex:listening on :(\\d+)"
+    log_assert:
+      - { type: contains, value: "graceful shutdown" }
+
+steps:
+  - name: ping
+    command: myapp ping --port {{port}}
+```
+
+**Inline `background: true` step** — the ergonomic shortcut. A step opts out of blocking; the runner spawns it as a daemon, polls readiness, then moves on. Use this when the daemon naturally starts mid-sequence (e.g., between two setup actions or between two test steps).
+
+```yaml
+steps:
+  - name: seed
+    command: myapp seed-data
+  - name: start-worker
+    background: true
+    command: myapp worker --queue jobs
+    ready: { log_contains: "worker ready" }
+    stop:  { signal: INT, grace: 3s }
+  - name: enqueue
+    command: myapp enqueue task-1
+```
+
+A `background: true` step forbids `assert:` and `capture:` (no stdout is captured at point-of-use) and requires the same `ready:` / `stop:` / `log_assert:` machinery as a top-level daemon.
+
+### Ordering contract
+
+The full execution order is:
+
+```
+provision-repo
+  → daemons[phase=pre_setup]      (named lifecycle, before setup)
+  → setup steps                   (fail-fast)
+  → daemons[phase=post_setup]     (named lifecycle, default phase)
+  → test steps                    (background:true steps slot in at their array position)
+  → daemon-stop (reverse start)   (TERM → grace → KILL; log_assert evaluated)
+  → cleanup assertions
+```
+
+Within the test phase, background steps start at the array index where they appear, so authors can interleave "do A → start worker B → do C" by writing the steps in that order.
+
+Daemon teardown always runs in **reverse of start order**, regardless of which surface launched each daemon. The registry is a single ordered list.
+
+### Readiness
+
+`ready:` gates the runner: the next step (or the start of test steps) does not run until readiness fires or the timeout expires. Exactly one mode is set:
+
+| Mode | Trigger |
+|---|---|
+| `tcp: "host:port"` | `net.Dial` succeeds with a 200ms-per-attempt timeout. |
+| `log_contains: "<substring>"` | Substring appears in the merged stdout+stderr captured by the runner. |
+| `command: "<probe>"` | Probe command exits 0. The probe runs with the host shell PATH, not the spec's sandboxed PATH (it's a check, not a SUT invocation). |
+| `pid_file: "<path>"` | File exists and is non-empty. |
+
+Defaults: `timeout: 5s`, `interval: 100ms`. The full per-daemon `start_timeout` (default 10s) is the outer bound used when `ready.timeout` is unset; if both are set, `ready.timeout` wins.
+
+Empty `ready:` block (or omitted) means "started == ready" — the runner does not wait. Used when no synchronization is needed (e.g., a fire-and-forget agent the next step explicitly waits on).
+
+If the daemon process exits during readiness polling, the runner aborts immediately with the captured log tail — never silently hangs.
+
+### Stop semantics
+
+At teardown, for each daemon in reverse start order:
+
+1. Send the configured signal (default `TERM`) to the **process group** (`Setpgid: true` at spawn time, `kill -<signal> -<pgid>`). This reaps forked children — important for daemons that spawn workers.
+2. Wait up to `grace` (default 5s) for the process to exit.
+3. If still alive after grace, send `SIGKILL` to the process group and **record the spec as failed** with `daemon X did not exit within grace`.
+4. If `expected_exit` is set and the exit code differs, **record the spec as failed** with `daemon X exited N, expected M`. Default `expected_exit` is `0`.
+
+This makes clean shutdown a tested behavior, not a hope. A daemon that ignores SIGTERM will fail the spec the first time it lands behind a gotit suite.
+
+### Log assertions
+
+`log_assert:` runs at teardown against the merged stdout+stderr captured into the ring buffer (~64KB; older bytes are dropped). The standard assertion types apply: `contains`, `not_contains`, `regex`, `stderr_contains` (treated identically to `contains` here since the streams are merged). Use this to verify the daemon logged the right thing during operation — handshake completion, graceful-shutdown markers, error rates.
+
+### Mid-spec death
+
+A goroutine waits on each daemon's `cmd.Wait()` and closes a sentinel channel when it returns. Between every setup step and every test step, the runner checks the channels. If any daemon has exited before its planned stop, the runner:
+
+- Emits `daemon_died` with the exit code and the last ~2KB of captured log.
+- Aborts the remaining test steps (fail-fast).
+- Still runs the stop phase for any *other* daemons and the cleanup phase.
+
+This converts "my downstream step failed mysteriously with connection refused" into "daemon X died at step 3 with exit 2 — here is its log."
+
+### Templates and capture
+
+Daemon `command` and `env` resolve `{{ var }}` against the vars built up so far (from setup-step captures and earlier-phase daemons). `capture:` on a daemon runs once after readiness fires, against the captured log, using the same JSONPath/regex expressions step captures use. Captured values are visible to all subsequent steps and to later daemons.
+
+### Files written
+
+Each daemon's full stdout+stderr is tee'd to `$HOME/.gotit-daemons/<name>.log` for post-mortem. The in-memory ring buffer is bounded (~64KB), but the on-disk file is unbounded. The HOME directory is removed at end-of-spec by the test driver unless `GOTIT_KEEP_HOMEDIR=1` is set.
+
+### Event stream
+
+The runner emits four new event types in addition to `step_start` / `step_done`:
+
+| Type | When |
+|---|---|
+| `daemon_start` | Process spawned, before readiness polling. Carries `Daemon`, `PID`, `Command`, `Ready` (description of which mode). |
+| `daemon_ready` | Readiness check passed. Carries `DurationMs`. |
+| `daemon_died` | Process exited unexpectedly mid-spec (before stop was called). Carries `ExitCode`, `Stdout` (log tail), `Error`. |
+| `daemon_stop` | Teardown complete. Carries `Signal`, `ExitCode`, `DurationMs`, `Stdout` (log tail), `Assertions` (log_assert results), `Passed`, and `Error` when clean exit was not achieved. |
+
+JSONL records mirror these (`daemon_start`, `daemon_ready`, `daemon_died`, `daemon_stop` types in the log file).
+
+---
+
 ## 7. Capture & Templating
 
 The capture-and-template loop is what turns a list of independent commands into a coherent scenario.
