@@ -8,10 +8,19 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/shivamstaq/gotit/runner"
 )
+
+func itoa(n int) string  { return strconv.Itoa(n) }
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
 
 // FindLatestJSONL returns the most recent .jsonl file in dir. Used by the
 // post-mortem path (when the user opens the TUI after a CI run).
@@ -67,6 +76,15 @@ type JSONLEvent struct {
 	HomeDir    string                   `json:"home_dir,omitempty"`
 	BinDir     string                   `json:"bin_dir,omitempty"`
 	Env        map[string]string        `json:"env,omitempty"`
+
+	// Daemon-event fields (populated only on daemon_* record types).
+	Daemon        string                   `json:"daemon,omitempty"`
+	PID           int                      `json:"pid,omitempty"`
+	Signal        string                   `json:"signal,omitempty"`
+	Ready         string                   `json:"ready,omitempty"`
+	CleanExit     bool                     `json:"clean_exit,omitempty"`
+	LogTail       string                   `json:"log_tail,omitempty"`
+	LogAssertions []runner.AssertionResult `json:"log_assertions,omitempty"`
 }
 
 // TailJSONL streams every appended line of a JSONL log file to ch until ctx
@@ -136,35 +154,83 @@ func TailJSONL(ctx context.Context, path string, ch chan<- JSONLEvent) error {
 }
 
 // ToSpecEvent converts a JSONLEvent into the runner.SpecEvent shape the TUI
-// already knows how to render.
+// already knows how to render. Daemon lifecycle records are surfaced as
+// synthetic step_done events with phase="daemon" so they appear in the step
+// timeline; this keeps the renderer unchanged while making daemon activity
+// visible without a dedicated panel.
 func (e JSONLEvent) ToSpecEvent() runner.SpecEvent {
 	t := e.Type
-	switch t {
+	command := e.Command
+	stdout := e.Stdout
+	passed := e.Passed
+	step := e.Step
+	phase := e.Phase
+	assertions := e.Assertions
+
+	switch e.Type {
 	case runner.RecordTypeSpecStart:
 		t = "spec_start"
 	case runner.RecordTypeStep:
 		t = "step_done"
 	case runner.RecordTypeSpecEnd:
 		t = "spec_end"
+	case runner.RecordTypeDaemonStart:
+		t = "step_done"
+		phase = "daemon"
+		step = "[daemon] " + e.Daemon + " starting"
+		passed = e.Error == ""
+		if e.Error != "" {
+			stdout = e.Error
+		}
+	case runner.RecordTypeDaemonReady:
+		t = "step_done"
+		phase = "daemon"
+		step = "[daemon] " + e.Daemon + " ready"
+		passed = true
+		stdout = "ready via " + e.Ready
+	case runner.RecordTypeDaemonDied:
+		t = "step_done"
+		phase = "daemon"
+		step = "[daemon] " + e.Daemon + " died"
+		passed = false
+		stdout = "exit_code=" + itoa(e.ExitCode) + "\n" + e.LogTail
+	case runner.RecordTypeDaemonStop:
+		t = "step_done"
+		phase = "daemon"
+		step = "[daemon] " + e.Daemon + " stopped"
+		passed = e.Passed
+		signalLabel := e.Signal
+		if signalLabel != "" {
+			signalLabel = "SIG" + signalLabel
+		}
+		stdout = signalLabel + ", exit=" + itoa(e.ExitCode) + ", clean=" + boolStr(e.CleanExit) + "\n" + e.LogTail
+		// Merge log_assertions into assertions so the renderer shows them.
+		if len(e.LogAssertions) > 0 {
+			assertions = append(assertions, e.LogAssertions...)
+		}
 	}
 	return runner.SpecEvent{
 		Type:       t,
 		Wave:       e.Wave,
 		Spec:       e.Spec,
-		Phase:      e.Phase,
-		Step:       e.Step,
-		Command:    e.Command,
-		Stdout:     e.Stdout,
+		Phase:      phase,
+		Step:       step,
+		Command:    command,
+		Stdout:     stdout,
 		Stderr:     e.Stderr,
 		ExitCode:   e.ExitCode,
 		DurationMs: e.DurationMs,
-		Assertions: e.Assertions,
-		Passed:     e.Passed,
+		Assertions: assertions,
+		Passed:     passed,
 		Skipped:    e.Skipped,
 		Error:      e.Error,
 		WorkDir:    e.WorkDir,
 		HomeDir:    e.HomeDir,
 		BinDir:     e.BinDir,
 		Env:        e.Env,
+		Daemon:     e.Daemon,
+		PID:        e.PID,
+		Signal:     e.Signal,
+		Ready:      e.Ready,
 	}
 }
