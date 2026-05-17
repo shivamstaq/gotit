@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: echo-server-pre-setup
+description: >
+  pre_setup daemon: server starts before setup steps so setup can talk to it.
+tags: [wave2, daemon, pre-setup]
+order: 30
+requires: [git, curl]
+
+daemons:
+  - name: echo
+    command: sh -c 'demo serve --port-file $HOME/echo.port'
+    phase: pre_setup
+    ready:
+      log_contains: "listening on port"
+      timeout: 5s
+    capture:
+      port: "regex:listening on port (\\d+)"
+    stop:
+      grace: 4s
+
+setup:
+  - name: seed-via-running-server
+    command: sh -c 'curl -sf http://127.0.0.1:$(cat $HOME/echo.port)/health > /dev/null'
+
+steps:
+  - name: echo-after-seed
+    command: sh -c 'curl -sf "http://127.0.0.1:$(cat $HOME/echo.port)/echo?msg=seeded"'
+    assert:
+      - type: contains
+        value: "seeded"

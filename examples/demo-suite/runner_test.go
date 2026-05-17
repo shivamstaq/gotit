@@ -31,6 +31,7 @@ func TestE2E(t *testing.T) {
 		},
 		RequirementCheckers: map[string]runner.RequirementChecker{
 			"demo-helper-marker": helpers.CheckDemoHelperMarker,
+			"curl":               helpers.CheckCurl,
 		},
 		Assertions: map[string]runner.AssertionFunc{
 			"x-output-lines-gte": assertOutputLinesGte,

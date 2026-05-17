@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: echo-server-background-step
+description: >
+  Daemon expressed via background:true step inline in the steps array. The
+  daemon starts between the seed step and the ping step.
+tags: [wave2, daemon, background]
+order: 20
+requires: [git, curl]
+
+steps:
+  - name: seed
+    command: sh -c 'mkdir -p $HOME/run && echo seeded > $HOME/run/seeded.txt'
+    assert:
+      - type: exit_code
+        expected: 0
+
+  - name: start-echo
+    background: true
+    command: sh -c 'demo serve --port-file $HOME/run/echo.port --ready-marker "listening"'
+    ready:
+      log_contains: "listening on port"
+      timeout: 5s
+    stop:
+      signal: TERM
+      grace: 4s
+
+  - name: read-port
+    command: sh -c 'cat $HOME/run/echo.port'
+    capture:
+      port: "regex:(\\d+)"
+    assert:
+      - type: exit_code
+        expected: 0
+
+  - name: ping
+    command: curl -sf http://127.0.0.1:{{ port }}/health
+    assert:
+      - type: contains
+        value: "ok"

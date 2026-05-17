@@ -7,6 +7,7 @@ package helpers
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/shivamstaq/gotit/runner"
@@ -41,6 +42,14 @@ func TwoCommitRename(_, workDir string, _ map[string]any) error {
 func CheckDemoHelperMarker(projectRoot string) error {
 	if _, err := os.Stat(projectRoot); err != nil {
 		return fmt.Errorf("project root %q not accessible: %w", projectRoot, err)
+	}
+	return nil
+}
+
+// CheckCurl ensures curl is on PATH; daemon specs use it as their HTTP client.
+func CheckCurl(_ string) error {
+	if _, err := exec.LookPath("curl"); err != nil {
+		return fmt.Errorf("curl not found on PATH: %w", err)
 	}
 	return nil
 }

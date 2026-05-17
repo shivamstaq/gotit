@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: log-assert-graceful-shutdown
+description: >
+  log_assert evaluates "graceful shutdown complete" against the captured log
+  after teardown. SIGTERM gives the server a chance to print the marker.
+tags: [wave2, daemon, log-assert]
+order: 40
+requires: [git]
+
+daemons:
+  - name: echo
+    command: demo serve --ready-marker "listening"
+    ready:
+      log_contains: "listening on port"
+      timeout: 5s
+    stop:
+      signal: TERM
+      grace: 4s
+    log_assert:
+      - type: contains
+        value: "graceful shutdown complete"
+      - type: not_contains
+        value: "PANIC"
+
+steps:
+  - name: pause
+    command: sh -c 'true'
+    assert:
+      - type: exit_code
+        expected: 0

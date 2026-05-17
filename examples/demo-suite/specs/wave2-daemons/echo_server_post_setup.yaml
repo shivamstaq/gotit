@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=../../../../schema/spec.schema.json
+spec_version: 1
+name: echo-server-post-setup
+description: >
+  Top-level daemon, default phase (post_setup). Server starts after setup,
+  test steps curl it, daemon receives SIGTERM at teardown and exits cleanly.
+tags: [wave2, daemon]
+order: 10
+requires: [git, curl]
+
+setup:
+  - name: prepare-port-file-dir
+    command: sh -c 'mkdir -p $HOME/run'
+
+daemons:
+  - name: echo
+    command: demo serve --port-file $HOME/run/echo.port --ready-marker "listening"
+    ready:
+      log_contains: "listening on port"
+      timeout: 5s
+    capture:
+      port: "regex:listening on port (\\d+)"
+    stop:
+      signal: TERM
+      grace: 4s
+      expected_exit: 0
+    log_assert:
+      - type: contains
+        value: "graceful shutdown complete"
+
+steps:
+  - name: ping-health
+    command: curl -sf http://127.0.0.1:{{ port }}/health
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: contains
+        value: "ok"
+  - name: echo-message
+    command: curl -sf "http://127.0.0.1:{{ port }}/echo?msg=hello"
+    assert:
+      - type: exit_code
+        expected: 0
+      - type: contains
+        value: "hello"
