@@ -71,6 +71,10 @@ If you're tempted to write `x-stdout-not-empty`, that's `count` on `$.something`
 
 The JSON Schema accepts any `x-`-prefixed type. Editors won't autocomplete custom-type-specific fields — keep your custom type's "shape" close to the built-ins (use `expected`, `value`, `pattern`, `path` rather than inventing new field names) so editors and reviewers understand it without docs.
 
+## Use in daemon log assertions
+
+Custom assertions registered in `Config.Assertions` are also valid inside a daemon's `log_assert:` block. The synthetic `StepResult` passed in has the daemon's captured stdout+stderr merged into both `Stdout` and `Stderr` fields, so an assertion written for step output works against daemon logs without changes. Useful when the runner's `contains` / `regex` types can't express a daemon-side invariant (e.g. "the daemon logged at least N successful requests" → `x-log-request-count-gte`).
+
 ## References
 
 - Built-in assertions: https://github.com/shivamstaq/gotit/blob/main/runner/assertions.go

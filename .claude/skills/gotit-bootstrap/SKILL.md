@@ -87,6 +87,15 @@ After bootstrapping, suggest the user install the TUI binary for the daily-drive
 go install github.com/shivamstaq/gotit/cmd/gotit@latest
 ```
 
+## Daemons (opt-in, do not add by default)
+
+If the CLI under test is a server, watcher, agent, or has a daemon subcommand, the user may want to test it with gotit's daemon lifecycle (`daemons:` block or `background: true` step). Bootstrap does **not** scaffold a daemon spec — the smoke test stays a simple synchronous invocation. Instead, mention briefly that daemon support exists and point at:
+
+- SPEC.md §6.5 — full daemon lifecycle contract.
+- The `gotit-add-daemon-spec` skill — for authoring one when the user is ready.
+
+Bootstrapping a fresh project should not force daemon thinking on a CLI that doesn't need it.
+
 ## References
 
 - Spec: https://github.com/shivamstaq/gotit/blob/main/SPEC.md

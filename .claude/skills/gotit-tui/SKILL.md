@@ -73,6 +73,10 @@ The binary works inside any Go project that has gotit set up (a `tests/e2e/runne
 | `esc` | Back to test list |
 | `q` | Quit |
 
+**Daemon entries** appear inline in the timeline with phase `daemon` and step names like `[daemon] echo starting`, `[daemon] echo ready`, `[daemon] echo stopped`. They carry the daemon PID, signal sent at teardown, and the last ~4KB of captured stdout+stderr. Failed clean shutdown shows up as a `[daemon] X stopped` entry with `passed=false`; failed log assertions appear in the same entry's assertion list. Mid-spec crashes appear as `[daemon] X died` and short-circuit the remaining test steps.
+
+For the daemon's full unbounded log, open the embedded shell and read `$HOME/.gotit-daemons/<name>.log` — the TUI sets `GOTIT_KEEP_HOMEDIR=1` so the file survives test exit.
+
 ### Embedded shell
 
 | Key | Action |

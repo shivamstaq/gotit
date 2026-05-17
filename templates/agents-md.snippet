@@ -5,10 +5,11 @@ This project's E2E tests are driven by [gotit](https://github.com/shivamstaq/got
 When asked to write, run, or debug E2E tests, prefer the installed `gotit-*` skills (under `.claude/skills/` and `.opencode/skills/`):
 
 - `gotit-add-spec` — author one YAML spec for one feature.
+- `gotit-add-daemon-spec` — author a spec for a daemon/server/long-running process (start → exercise → stop, with readiness and clean-shutdown verification).
 - `gotit-add-fixture` — add a static repo fixture under `testdata/repos/`.
 - `gotit-add-helper` — register a programmatic repo builder (commit history, renames, …).
 - `gotit-add-feature-flag` — land a spec for an unshipped feature behind a flag.
 - `gotit-diagnose-failure` — read the JSONL log under `tests/e2e/results/` and propose a fix.
 - `gotit-run-suite` — run a filtered subset via `go test -run`.
 
-The cross-tool spec contract lives at `https://github.com/shivamstaq/gotit/blob/main/SPEC.md`. When uncertain about the YAML format, assertion types, or capture syntax, consult that file.
+The cross-tool spec contract lives at `https://github.com/shivamstaq/gotit/blob/main/SPEC.md`. When uncertain about the YAML format, assertion types, or capture syntax, consult that file. Daemon lifecycle (servers, watchers, agents) is documented in §6.5 — gotit owns process spawning, readiness polling, and clean-shutdown verification so specs stay declarative.

@@ -23,6 +23,10 @@ Translate one source-suite scenario into one gotit spec at a time. The mapping i
 | `pytest`'s `subprocess.run` + `assert .returncode` | Same as bats — exit code + output assertions. |
 | `tmp_path` / `tmpdir` fixtures | Built into the runner; the spec runs in an isolated temp dir already. |
 | Custom Python helpers building a repo | `runner.RepoHelper` Go function — see `gotit-add-helper`. |
+| `mydaemon &` then `wait` / `kill $!` / `kill $(cat pid)` | `daemons:` block or `background: true` step — see daemon section below. |
+| `wait_for_port 8080` / `wait_for_log "ready"` polling loops | `ready: { tcp: ":8080" }` / `ready: { log_contains: "ready" }`. |
+| `trap "kill ..." EXIT` cleanup | Automatic — the runner reaps the process group at end of spec. |
+| Assertion on captured server log after kill | `daemons[].log_assert:` with `contains` / `regex` / `not_contains`. |
 
 ## Steps
 
@@ -43,6 +47,50 @@ Translate one source-suite scenario into one gotit spec at a time. The mapping i
 6. **Run as you go**: `go test ./tests/e2e/ -run "TestE2E/<wave>/<spec>" -v`. Each port that passes gives you a green data point; debugging fresh-port failures is much harder when 30 specs land in one PR.
 
 7. **Delete the old test** when the gotit spec is green and reviewed. Two suites covering the same surface drift; pick one.
+
+## Daemon-style tests (servers, agents, watchers)
+
+A common bats / expect / pytest pattern:
+
+```bash
+@test "echo server roundtrip" {
+  mydaemon --port 8080 &
+  PID=$!
+  trap "kill $PID" EXIT
+  # poll until ready
+  for i in $(seq 1 50); do
+    nc -z localhost 8080 && break
+    sleep 0.1
+  done
+  run curl -sf http://localhost:8080/echo?msg=hi
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"hi"* ]]
+}
+```
+
+Port to gotit by **moving the lifecycle out of the test body** into the spec metadata:
+
+```yaml
+daemons:
+  - name: echo
+    command: sh -c 'mydaemon --port 8080'
+    ready:
+      tcp: "localhost:8080"
+      timeout: 5s
+    stop:
+      grace: 5s
+
+steps:
+  - name: roundtrip
+    command: curl -sf "http://localhost:8080/echo?msg=hi"
+    assert:
+      - { type: exit_code, expected: 0 }
+      - { type: contains, value: "hi" }
+```
+
+The runner owns spawning, readiness polling, signaling, and process-group reaping. The `trap "kill"`, the polling loop, and the `&` all disappear. Use the `gotit-add-daemon-spec` skill for the full decision tree (top-level vs background, readiness mode, stop semantics).
+
+Hand-rolled retry loops in the original (e.g. "try curl 10 times until it works") often *only* exist because the test had no readiness gate. Once gotit's `ready:` is in place, the loop is dead code — port the body straight as a single step.
 
 ## Translation gotchas
 

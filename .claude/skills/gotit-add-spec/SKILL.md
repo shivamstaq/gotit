@@ -77,8 +77,29 @@ Add one new YAML spec to the project's gotit suite.
 - One spec covering five unrelated features. Split into focused specs.
 - Inline shell pipelines in `command:` — the runner does not invoke a shell. If you need pipes, write `sh -c '...'` explicitly.
 - Hardcoding paths under the work dir. The test runs in an isolated temp dir; refer to fixture files by relative path.
+- Using `sh -c 'mydaemon &'` to background a process. The runner does not reap detached children. Use the `daemons:` block or `background: true` step — see below.
+
+## Daemons / long-running processes
+
+If the feature under test is a server, watcher, agent, or any process that must be running while the test exercises it: **switch to the `gotit-add-daemon-spec` skill** instead of forcing a daemon into the synchronous step model.
+
+Quick recognition cues — the request mentions any of:
+
+- "the server", "start the daemon", "spin up X"
+- "while the worker is running, do Y"
+- a `serve` / `daemon` / `watch` subcommand
+- a port number, socket path, or readiness signal
+- "test graceful shutdown" or "verify SIGTERM behavior"
+
+Two spec-level surfaces are available; `gotit-add-daemon-spec` handles the choice between them, but in brief:
+
+- `daemons:` top-level block — named daemon with `phase: pre_setup | post_setup`, `ready:`, `stop:`, `capture:`, `log_assert:`. Use when the daemon is part of the spec's *environment*.
+- `background: true` on a step — inline daemon that starts at its position in the steps array. Use when the daemon naturally starts mid-sequence.
+
+See SPEC.md §6.5 for the full contract.
 
 ## References
 
 - Assertion semantics: https://github.com/shivamstaq/gotit/blob/main/SPEC.md#8-assertion-types
 - Capture syntax: https://github.com/shivamstaq/gotit/blob/main/SPEC.md#7-capture--templating
+- Daemon lifecycle: https://github.com/shivamstaq/gotit/blob/main/SPEC.md#65-daemon-lifecycle

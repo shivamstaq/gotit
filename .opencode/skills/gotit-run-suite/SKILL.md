@@ -75,6 +75,15 @@ The subtest naming is always `TestE2E/<wave>/<name>`. There is no tag-based filt
 - `-count=1` defeats Go's test cache. The suite is fully I/O-bound (it execs binaries), so caching doesn't usually help; if a spec is "passing" but the CLI's been edited, the fresh binary build in `TestMain` ensures the test actually exercises the new code.
 - Don't pass `-failfast` for the full suite; the parallel subtest model means you'll lose useful information about other failures.
 
+### Daemon specs
+
+Specs that use `daemons:` or `background: true` add real-time overhead: readiness polling (default ~5s upper bound), `stop.grace` delay (default 5s) at teardown, and any `start_timeout` budget. A wave with five daemon specs running in parallel can take 15-30s. Either:
+
+- Pass `-timeout 120s` (or higher) explicitly when running daemon-heavy waves.
+- Or drop `start_timeout` / `stop.grace` in specs that don't need them — but only when those tighter bounds reflect *real* requirements; don't tune for speed at the cost of masking shutdown bugs.
+
+If a daemon spec hangs, it's almost always the daemon under test failing to shut down. The test harness will SIGKILL after `stop.grace` and surface the failure; the wait is bounded.
+
 ## References
 
 - Discovery + filtering: https://github.com/shivamstaq/gotit/blob/main/SPEC.md#13-test-discovery--filtering
