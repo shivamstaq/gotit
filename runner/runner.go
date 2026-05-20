@@ -316,7 +316,7 @@ func (r *Runner) startDaemonsForPhase(
 		if dphase != phase {
 			continue
 		}
-		if err := r.spawnDaemon(ctx, spec, d.Name, d.Command, d.Env, d.Ready, d.Stop, d.Capture, d.LogAssert, d.StartTimeout, registry, env, workDir, homeDir, vars, binPath, events); err != nil {
+		if err := r.spawnDaemon(ctx, spec, d.Name, d.Command, d.Env, d.Ready, d.Stop, d.Capture, d.LogAssert, d.StartTimeout, d.ExpectExit, registry, env, workDir, homeDir, vars, binPath, events); err != nil {
 			return err
 		}
 	}
@@ -342,7 +342,7 @@ func (r *Runner) startBackgroundStep(
 		Phase: "test", Step: step.Name,
 		Command: ResolveTemplates(step.Command, vars),
 	}
-	if err := r.spawnDaemon(ctx, spec, step.Name, step.Command, step.Env, step.Ready, step.Stop, nil, step.LogAssert, step.Timeout, registry, env, workDir, homeDir, vars, binPath, events); err != nil {
+	if err := r.spawnDaemon(ctx, spec, step.Name, step.Command, step.Env, step.Ready, step.Stop, nil, step.LogAssert, step.Timeout, step.ExpectExit, registry, env, workDir, homeDir, vars, binPath, events); err != nil {
 		// Surface the failure as a step_done so the TUI marks it failed.
 		events <- SpecEvent{
 			Type: "step_done", Wave: spec.Wave, Spec: spec.Name,
@@ -373,6 +373,7 @@ func (r *Runner) spawnDaemon(
 	capture map[string]string,
 	logAssert []Assertion,
 	startTimeout string,
+	expectExit bool,
 	registry *DaemonRegistry,
 	env []string,
 	workDir, homeDir string,
@@ -392,6 +393,7 @@ func (r *Runner) spawnDaemon(
 		})
 		return err
 	}
+	h.ExpectExit = expectExit
 	h.ApplyCapture(capture, vars)
 	// Remember stop/log_assert by daemon name for the teardown phase.
 	r.recordDaemonTeardownConfig(spec, name, stop, logAssert)

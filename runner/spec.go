@@ -67,6 +67,12 @@ type Step struct {
 	Ready      *ReadyCheck `yaml:"ready,omitempty"`
 	Stop       *StopSpec   `yaml:"stop,omitempty"`
 	LogAssert  []Assertion `yaml:"log_assert,omitempty"`
+	// ExpectExit marks a background step whose process is designed to
+	// exit on its own (e.g. a subscriber with `--max-events 1`). When
+	// true, PollDeaths skips this daemon's natural exit and the
+	// teardown phase tolerates an already-dead process. Default false
+	// preserves the strict "long-lived daemon" semantic.
+	ExpectExit bool `yaml:"expect_exit,omitempty"`
 }
 
 // Daemon is a long-running process spawned by the runner and torn down at end
@@ -99,6 +105,8 @@ type Daemon struct {
 	Stop         *StopSpec         `yaml:"stop,omitempty"`
 	Capture      map[string]string `yaml:"capture,omitempty"`
 	LogAssert    []Assertion       `yaml:"log_assert,omitempty"`
+	// See Step.ExpectExit.
+	ExpectExit bool `yaml:"expect_exit,omitempty"`
 }
 
 // ReadyCheck gates daemon startup. Exactly one of TCP / LogContains / Command

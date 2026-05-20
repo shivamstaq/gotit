@@ -46,6 +46,12 @@ type DaemonHandle struct {
 	StartedAt time.Time
 	ReadyAt   time.Time
 
+	// ExpectExit is true for background daemons designed to exit on
+	// their own (e.g. a subscriber bound to `--max-events 1`). When
+	// set, PollDeaths skips this daemon and teardown tolerates an
+	// already-dead process exiting with code 0.
+	ExpectExit bool
+
 	exited   chan struct{}
 	exitErr  error
 	exitCode int
@@ -93,10 +99,18 @@ func (r *DaemonRegistry) add(h *DaemonHandle) {
 
 // PollDeaths returns the first handle whose process has exited
 // unexpectedly (Stop hasn't been called). It does not block.
+//
+// Handles with ExpectExit=true are skipped: those are background
+// daemons designed to exit on their own (e.g. a subscriber with
+// `--max-events 1`). The teardown phase still records their final
+// exit code via the regular Stop path.
 func (r *DaemonRegistry) PollDeaths() *DaemonHandle {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, h := range r.handles {
+		if h.ExpectExit {
+			continue
+		}
 		select {
 		case <-h.exited:
 			return h
@@ -280,11 +294,14 @@ func (h *DaemonHandle) Stop(stop *StopSpec) DaemonResult {
 		res.Grace = grace
 		res.ExpectedExit = expectedExit
 
-		// Already dead? Capture state and return.
+		// Already dead? Capture state and return. For ExpectExit
+		// daemons (e.g. `--max-events 1` subscribers) the natural
+		// exit is the design, not a fault — don't flag it as
+		// UnexpectedDeath.
 		select {
 		case <-h.exited:
 			res.CleanExit = true
-			res.UnexpectedDeath = true
+			res.UnexpectedDeath = !h.ExpectExit
 		default:
 			// Send signal to the whole process group so forked children die too.
 			killGroup(h.PGID, h.PID, signal)
