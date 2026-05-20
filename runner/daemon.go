@@ -372,12 +372,21 @@ func readinessProbe(c *ReadyCheck) func(*DaemonHandle) bool {
 		}
 	case c.Command != "":
 		cmdLine := c.Command
-		return func(*DaemonHandle) bool {
+		return func(h *DaemonHandle) bool {
 			parts := SplitCommand(cmdLine)
 			if len(parts) == 0 {
 				return false
 			}
 			cmd := exec.Command(parts[0], parts[1:]...)
+			// Inherit the daemon's env so the probe shell expands
+			// $HOME / $XDG_CONFIG_HOME / $PATH the same way the
+			// daemon does. Otherwise the probe runs with gotit's
+			// own $HOME and a spec like `grep -q foo $HOME/x` looks
+			// at the wrong file. Fixed in v0.3.1.
+			if h != nil && h.Cmd != nil && len(h.Cmd.Env) > 0 {
+				cmd.Env = h.Cmd.Env
+				cmd.Dir = h.Cmd.Dir
+			}
 			return cmd.Run() == nil
 		}
 	case c.PIDFile != "":

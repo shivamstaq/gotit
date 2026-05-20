@@ -142,6 +142,27 @@ func Run(t *testing.T, cfg runner.Config) {
 								}
 							}
 						}
+					case "daemon_start", "daemon_died":
+						// A daemon that fails its readiness check, crashes
+						// before ready, or dies mid-spec is a spec failure
+						// — surface it to `go test` as such instead of
+						// letting the spec silently report PASS while the
+						// JSONL records spec_end passed=false. Fixed in v0.3.1.
+						if !ev.Passed {
+							msg := ev.Error
+							if msg == "" {
+								msg = "(no error message)"
+							}
+							t.Errorf("[%s] ✗ daemon %q failed: %s", ev.Type, ev.Daemon, msg)
+						}
+					case "daemon_stop":
+						if !ev.Passed {
+							msg := ev.Error
+							if msg == "" {
+								msg = "(daemon teardown reported not-passed; see JSONL log_tail)"
+							}
+							t.Errorf("[daemon_stop] ✗ daemon %q: %s", ev.Daemon, msg)
+						}
 					}
 				}
 			}()
