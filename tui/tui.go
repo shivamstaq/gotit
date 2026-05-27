@@ -535,8 +535,13 @@ func (m *Model) enterShell() (tea.Model, tea.Cmd) {
 
 	specName := entry.Spec.Wave + "/" + entry.Spec.Name
 	if m.shell != nil && !m.shell.exited && m.shell.specName == specName {
+		// Shell is already running for this spec — just switch focus back.
+		// Do NOT call waitForOutput() again: there is already a goroutine
+		// chained in the Update loop reading from the PTY. Spawning a second
+		// one would race on the same file descriptor and split shell output
+		// between the two readers, garbling the emulator display.
 		m.focus = focusShell
-		return m, m.shell.waitForOutput()
+		return m, nil
 	}
 	if m.shell != nil && !m.shell.exited {
 		m.shell.Close()
