@@ -57,9 +57,17 @@ func newShellFromEntry(info *shellSpecInfo, width, height int) (*shellModel, tea
 		height = 24
 	}
 
-	shellPath := os.Getenv("SHELL")
-	if shellPath == "" {
-		shellPath = "/bin/bash"
+	// Prefer bash for the embedded shell: it starts cleanly with a temp HOME,
+	// honours PS1 as-is, and doesn't query terminal capabilities aggressively
+	// on startup (unlike fish or zsh with plugins). Fall back to $SHELL, then
+	// /bin/sh, so the pane still works on systems without bash.
+	shellPath := "/bin/bash"
+	if _, err := exec.LookPath("bash"); err != nil {
+		if s := os.Getenv("SHELL"); s != "" {
+			shellPath = s
+		} else {
+			shellPath = "/bin/sh"
+		}
 	}
 
 	cmd := exec.Command(shellPath)
