@@ -57,9 +57,17 @@ func newShellFromEntry(info *shellSpecInfo, width, height int) (*shellModel, tea
 		height = 24
 	}
 
-	shellPath := os.Getenv("SHELL")
-	if shellPath == "" {
-		shellPath = "/bin/bash"
+	// Prefer bash for the embedded shell: it starts cleanly with a temp HOME,
+	// honours PS1 as-is, and doesn't query terminal capabilities aggressively
+	// on startup (unlike fish or zsh with plugins). Fall back to $SHELL, then
+	// /bin/sh, so the pane still works on systems without bash.
+	shellPath := "/bin/bash"
+	if _, err := exec.LookPath("bash"); err != nil {
+		if s := os.Getenv("SHELL"); s != "" {
+			shellPath = s
+		} else {
+			shellPath = "/bin/sh"
+		}
 	}
 
 	cmd := exec.Command(shellPath)
@@ -95,6 +103,30 @@ func newShellFromEntry(info *shellSpecInfo, width, height int) (*shellModel, tea
 	}
 
 	em := vt.NewEmulator(width, height)
+
+	// The vt.Emulator writes terminal responses (cursor position reports,
+	// device attributes, mode reports, OSC colour queries, …) to an internal
+	// unbuffered io.Pipe writer (e.pw). Without a reader on the other end
+	// (e.pr) these writes block inside emulator.Write(), which deadlocks the
+	// bubbletea Update loop and makes the TUI appear to freeze/crash.
+	//
+	// Fix: drain the emulator's response pipe in a background goroutine and
+	// forward each chunk to the shell's PTY stdin so readline/zsh/fish
+	// actually receives the answers to its queries (cursor position, DA1/DA2,
+	// etc.). The goroutine exits naturally when emulator.Close() seals e.pw
+	// with io.EOF, causing e.pr.Read to return immediately.
+	go func() {
+		buf := make([]byte, 256)
+		for {
+			n, err := em.Read(buf)
+			if n > 0 {
+				_, _ = ptmx.Write(buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	m := &shellModel{
 		ptmx:     ptmx,
