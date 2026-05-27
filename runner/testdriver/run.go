@@ -48,7 +48,12 @@ func Run(t *testing.T, cfg runner.Config) {
 	if err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(binDir) })
+	// When GOTIT_KEEP_HOMEDIR=1 the TUI wants to open a shell in the spec's
+	// preserved work dir and run the binary from there. Keep binDir alive for
+	// the same duration so the binary is still on PATH inside that shell.
+	if os.Getenv("GOTIT_KEEP_HOMEDIR") != "1" {
+		t.Cleanup(func() { _ = os.RemoveAll(binDir) })
+	}
 
 	r, err := runner.New(cfg, binDir, projectRoot)
 	if err != nil {
